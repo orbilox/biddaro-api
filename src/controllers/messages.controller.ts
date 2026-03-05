@@ -14,19 +14,26 @@ export async function getConversations(req: AuthenticatedRequest, res: Response)
     where: { OR: [{ senderId: userId }, { receiverId: userId }] },
     orderBy: { createdAt: 'desc' },
     include: {
-      sender: { select: { id: true, firstName: true, lastName: true, profileImage: true } },
-      receiver: { select: { id: true, firstName: true, lastName: true, profileImage: true } },
+      sender: { select: { id: true, firstName: true, lastName: true, profileImage: true, role: true } },
+      receiver: { select: { id: true, firstName: true, lastName: true, profileImage: true, role: true } },
+      job: { select: { id: true, title: true } },
     },
   });
 
   // Build conversation map: one entry per unique (jobId, otherUserId) pair
   const convMap = new Map<string, {
-    id: string;
+    otherUserId: string;
     otherUser: unknown;
-    lastMessage: string;
-    lastMessageAt: Date;
+    lastMessage: {
+      id: string;
+      content: string;
+      createdAt: Date;
+      senderId: string;
+      isRead: boolean;
+    };
     unreadCount: number;
     jobId: string | null;
+    job: { id: string; title: string } | null;
   }>();
 
   for (const msg of messages) {
@@ -35,12 +42,18 @@ export async function getConversations(req: AuthenticatedRequest, res: Response)
 
     if (!convMap.has(key)) {
       convMap.set(key, {
-        id: key,
+        otherUserId: otherUser.id,
         otherUser,
-        lastMessage: msg.content,
-        lastMessageAt: msg.createdAt,
+        lastMessage: {
+          id: msg.id,
+          content: msg.content,
+          createdAt: msg.createdAt,
+          senderId: msg.senderId,
+          isRead: msg.isRead,
+        },
         unreadCount: 0,
         jobId: msg.jobId,
+        job: msg.job ?? null,
       });
     }
 
