@@ -54,7 +54,13 @@ app.get('/health', (_req, res) => {
 });
 
 // ─── Static file serving (uploaded files) ────────────────────────────────────
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// Set Cross-Origin-Resource-Policy: cross-origin so browsers on the frontend
+// origin (localhost:3000) can load images/files from this origin (localhost:5000).
+// Helmet 7.x defaults to same-origin which would block all cross-origin image loads.
+app.use('/uploads', (_req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static(path.join(process.cwd(), 'uploads')));
 
 // ─── API routes ───────────────────────────────────────────────────────────────
 app.use('/api/v1', routes);
