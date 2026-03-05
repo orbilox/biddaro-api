@@ -9,6 +9,7 @@ import walletRoutes from './wallet.routes';
 import disputeRoutes from './disputes.routes';
 import reviewRoutes from './reviews.routes';
 import notificationRoutes from './notifications.routes';
+import uploadRoutes from './upload.routes';
 
 const router = Router();
 
@@ -28,6 +29,7 @@ router.get('/', (_req: Request, res: Response) => {
       '/api/v1/disputes',
       '/api/v1/reviews',
       '/api/v1/notifications',
+      '/api/v1/upload',
     ],
   });
 });
@@ -42,5 +44,6 @@ router.use('/wallet', walletRoutes);
 router.use('/disputes', disputeRoutes);
 router.use('/reviews', reviewRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/upload', uploadRoutes);
 
 export default router;

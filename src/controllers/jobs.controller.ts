@@ -75,7 +75,7 @@ export async function getJob(req: AuthenticatedRequest, res: Response): Promise<
 // ─── Create job ───────────────────────────────────────────────────────────────
 
 export async function createJob(req: AuthenticatedRequest, res: Response): Promise<void> {
-  const { title, description, category, budget, currency, timeline, startDate, endDate, location, skills, images } = req.body;
+  const { title, description, category, budget, currency, timeline, startDate, endDate, location, skills, images, documents } = req.body;
 
   const job = await prisma.job.create({
     data: {
@@ -88,6 +88,7 @@ export async function createJob(req: AuthenticatedRequest, res: Response): Promi
       endDate: endDate ? new Date(endDate) : undefined,
       skills: Array.isArray(skills) ? JSON.stringify(skills) : skills,
       images: Array.isArray(images) ? JSON.stringify(images) : images,
+      documents: Array.isArray(documents) ? JSON.stringify(documents) : documents,
     },
     include: JOB_INCLUDE,
   });
