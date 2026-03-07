@@ -108,6 +108,9 @@ model Contract {
   currency            String    @default("USD")
   status              String    @default("active")  // active|completed|disputed|cancelled
   milestones          String?   // JSON
+  escrowFunded        Boolean   @default(false)
+  escrowAmount        Float     @default(0)
+  releasedAmount      Float     @default(0)
   signedByPoster      DateTime?
   signedByContractor  DateTime?
   completedAt         DateTime?

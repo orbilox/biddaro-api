@@ -142,8 +142,14 @@ export async function acceptBid(req: AuthenticatedRequest, res: Response): Promi
         currency: bid.currency,
         status: 'active',
         signedByPoster: new Date(),
-        // Copy bid milestones → contract milestones (pending status)
-        milestones: bid.milestones ?? undefined,
+        // Copy bid milestones → contract milestones, each with status: 'pending'
+        milestones: bid.milestones
+          ? JSON.stringify(
+              (JSON.parse(bid.milestones) as Array<Record<string, unknown>>).map(
+                (m) => ({ ...m, status: 'pending' })
+              )
+            )
+          : undefined,
       },
       include: { job: true, contractor: true, poster: true },
     }),
