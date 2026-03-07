@@ -5,15 +5,37 @@ import { getPagination, buildPaginatedResult } from '../utils/pagination';
 import type { AuthenticatedRequest } from '../types';
 
 const BID_INCLUDE = {
-  contractor: { select: { id: true, firstName: true, lastName: true, profileImage: true, isVerified: true, yearsExperience: true } },
+  contractor: {
+    select: {
+      id: true, firstName: true, lastName: true, profileImage: true,
+      isVerified: true, yearsExperience: true, rating: true, location: true,
+    },
+  },
   job: { select: { id: true, title: true, budget: true, location: true, category: true, status: true, posterId: true } },
 };
+
+// ─── JSON helpers ─────────────────────────────────────────────────────────────
+
+function tryParse(val: string | null | undefined): unknown {
+  if (!val) return [];
+  try { return JSON.parse(val); } catch { return val; }
+}
+
+function parseBidData(bid: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...bid,
+    documents:    tryParse(bid.documents    as string | null),
+    milestones:   tryParse(bid.milestones   as string | null),
+    portfolio:    tryParse(bid.portfolio    as string | null),
+    certificates: tryParse(bid.certificates as string | null),
+  };
+}
 
 // ─── Submit a bid ─────────────────────────────────────────────────────────────
 
 export async function createBid(req: AuthenticatedRequest, res: Response): Promise<void> {
   const { jobId } = req.params;
-  const { amount, estimatedDays, proposal, portfolio, certificates } = req.body;
+  const { amount, estimatedDays, proposal, portfolio, certificates, documents, milestones } = req.body;
 
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job) { sendNotFound(res, 'Job'); return; }
@@ -33,19 +55,24 @@ export async function createBid(req: AuthenticatedRequest, res: Response): Promi
       amount: parseFloat(amount),
       estimatedDays: estimatedDays ? parseInt(estimatedDays) : undefined,
       proposal,
-      portfolio: portfolio ? JSON.stringify(portfolio) : undefined,
+      portfolio:    portfolio    ? JSON.stringify(portfolio)    : undefined,
       certificates: certificates ? JSON.stringify(certificates) : undefined,
+      // New fields: store arrays as JSON strings
+      documents:  Array.isArray(documents)  && documents.length  > 0 ? JSON.stringify(documents)  : undefined,
+      milestones: Array.isArray(milestones) && milestones.length > 0 ? JSON.stringify(milestones) : undefined,
     },
     include: BID_INCLUDE,
   });
 
   // Notify job poster
-  await createNotification(job.posterId, 'bid_received',
+  await createNotification(
+    job.posterId, 'bid_received',
     'New Bid Received',
     `${bid.contractor.firstName} ${bid.contractor.lastName} submitted a bid of $${amount} on your job "${job.title}"`,
-    { bidId: bid.id, jobId });
+    { bidId: bid.id, jobId },
+  );
 
-  sendCreated(res, bid, 'Bid submitted successfully');
+  sendCreated(res, parseBidData(bid as unknown as Record<string, unknown>), 'Bid submitted successfully');
 }
 
 // ─── Get bids for a job ───────────────────────────────────────────────────────
@@ -69,7 +96,8 @@ export async function getJobBids(req: AuthenticatedRequest, res: Response): Prom
     prisma.bid.count({ where: { jobId } }),
   ]);
 
-  sendSuccess(res, buildPaginatedResult(bids, total, { page, limit, skip }));
+  const parsed = bids.map(b => parseBidData(b as unknown as Record<string, unknown>));
+  sendSuccess(res, buildPaginatedResult(parsed, total, { page, limit, skip }));
 }
 
 // ─── Get my bids ──────────────────────────────────────────────────────────────
@@ -86,7 +114,8 @@ export async function getMyBids(req: AuthenticatedRequest, res: Response): Promi
     prisma.bid.count({ where }),
   ]);
 
-  sendSuccess(res, buildPaginatedResult(bids, total, { page, limit, skip }));
+  const parsed = bids.map(b => parseBidData(b as unknown as Record<string, unknown>));
+  sendSuccess(res, buildPaginatedResult(parsed, total, { page, limit, skip }));
 }
 
 // ─── Accept a bid ─────────────────────────────────────────────────────────────
@@ -113,6 +142,8 @@ export async function acceptBid(req: AuthenticatedRequest, res: Response): Promi
         currency: bid.currency,
         status: 'active',
         signedByPoster: new Date(),
+        // Copy bid milestones → contract milestones (pending status)
+        milestones: bid.milestones ?? undefined,
       },
       include: { job: true, contractor: true, poster: true },
     }),
@@ -126,10 +157,12 @@ export async function acceptBid(req: AuthenticatedRequest, res: Response): Promi
   ]);
 
   // Notify contractor
-  await createNotification(bid.contractorId, 'bid_accepted',
+  await createNotification(
+    bid.contractorId, 'bid_accepted',
     'Bid Accepted! 🎉',
     `Your bid of $${bid.amount} for "${bid.job.title}" has been accepted. A contract has been created.`,
-    { contractId: contract.id, jobId: bid.jobId });
+    { contractId: contract.id, jobId: bid.jobId },
+  );
 
   sendSuccess(res, contract, 'Bid accepted and contract created');
 }
@@ -144,10 +177,12 @@ export async function declineBid(req: AuthenticatedRequest, res: Response): Prom
 
   await prisma.bid.update({ where: { id: bid.id }, data: { status: 'declined' } });
 
-  await createNotification(bid.contractorId, 'bid_declined',
+  await createNotification(
+    bid.contractorId, 'bid_declined',
     'Bid Declined',
     `Your bid for "${bid.job.title}" was not selected this time.`,
-    { jobId: bid.jobId });
+    { jobId: bid.jobId },
+  );
 
   sendSuccess(res, null, 'Bid declined');
 }
@@ -166,7 +201,13 @@ export async function withdrawBid(req: AuthenticatedRequest, res: Response): Pro
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-async function createNotification(userId: string, type: string, title: string, message: string, data?: Record<string, unknown>) {
+async function createNotification(
+  userId: string,
+  type: string,
+  title: string,
+  message: string,
+  data?: Record<string, unknown>,
+) {
   await prisma.notification.create({
     data: { userId, type, title, message, data: data ? JSON.stringify(data) : undefined },
   }).catch(() => {});

@@ -85,6 +85,8 @@ model Bid {
   proposal      String?
   portfolio     String?   // JSON
   certificates  String?   // JSON
+  documents     String?   // JSON array of uploaded file URLs
+  milestones    String?   // JSON array of { title, description, amount, dueDate }
   status        String    @default("pending")  // pending|accepted|declined|withdrawn
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
