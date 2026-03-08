@@ -32,23 +32,32 @@ export async function getUserProfile(req: AuthenticatedRequest, res: Response): 
     ? user.receivedReviews.reduce((s, r) => s + r.rating, 0) / user.receivedReviews.length
     : null;
 
-  sendSuccess(res, { ...safeUser(user as unknown as Record<string, unknown>), averageRating: avgRating });
+  const safeData = parseProfileFields(safeUser(user as unknown as Record<string, unknown>));
+  sendSuccess(res, { ...safeData, averageRating: avgRating });
 }
 
 // ─── Update profile ───────────────────────────────────────────────────────────
 
+// Fields that are stored as JSON arrays/objects
+const JSON_FIELDS = new Set(['skills', 'portfolio', 'certifications', 'workHistory', 'languages']);
+
 export async function updateProfile(req: AuthenticatedRequest, res: Response): Promise<void> {
   const allowedFields = [
-    'firstName', 'lastName', 'phone', 'location', 'bio',
-    'profileImage', 'skills', 'licenseNumber', 'yearsExperience',
+    'firstName', 'lastName', 'phone', 'location', 'bio', 'profileImage',
+    'skills', 'licenseNumber', 'yearsExperience',
+    // Extended contractor profile
+    'portfolio', 'certifications', 'workHistory',
+    'availability', 'hourlyRate', 'website', 'languages', 'serviceRadius',
   ];
 
   const data: Record<string, unknown> = {};
   for (const field of allowedFields) {
     if (req.body[field] !== undefined) {
-      data[field] = Array.isArray(req.body[field])
-        ? JSON.stringify(req.body[field])
-        : req.body[field];
+      const val = req.body[field];
+      // Stringify arrays/objects; pass scalars through directly
+      data[field] = (Array.isArray(val) || (typeof val === 'object' && val !== null))
+        ? JSON.stringify(val)
+        : val;
     }
   }
 
@@ -57,7 +66,19 @@ export async function updateProfile(req: AuthenticatedRequest, res: Response): P
   }
 
   const user = await prisma.user.update({ where: { id: req.user!.userId }, data });
-  sendSuccess(res, safeUser(user as unknown as Record<string, unknown>), 'Profile updated');
+  sendSuccess(res, parseProfileFields(safeUser(user as unknown as Record<string, unknown>)), 'Profile updated');
+}
+
+// ─── Helper: parse JSON profile fields before returning ──────────────────────
+
+function parseProfileFields(user: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...user };
+  for (const field of JSON_FIELDS) {
+    if (typeof out[field] === 'string') {
+      try { out[field] = JSON.parse(out[field] as string); } catch { /* leave as string */ }
+    }
+  }
+  return out;
 }
 
 // ─── List contractors (public) ────────────────────────────────────────────────
@@ -129,14 +150,16 @@ export async function getUserStats(req: AuthenticatedRequest, res: Response): Pr
     });
   } else {
     // contractor
-    const [activeBids, jobsWon] = await Promise.all([
+    const [activeBids, jobsWon, jobsCompleted] = await Promise.all([
       prisma.bid.count({ where: { contractorId: userId, status: 'pending' } }),
       prisma.contract.count({ where: { contractorId: userId } }),
+      prisma.contract.count({ where: { contractorId: userId, status: 'completed' } }),
     ]);
 
     sendSuccess(res, {
       activeBids,
       jobsWon,
+      jobsCompleted,
       reviewCount: reviews.length,
       averageRating: avgRating,
     });

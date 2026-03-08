@@ -23,6 +23,15 @@ model User {
   licenseNumber     String?
   yearsExperience   Int?
   rating            Float?    @default(0)
+  // ── Extended contractor profile ──────────────────────────────────────────
+  portfolio         String?   // JSON: PortfolioItem[]
+  certifications    String?   // JSON: Certification[]
+  workHistory       String?   // JSON: WorkHistoryItem[]
+  availability      String?   @default("available")  // available|busy|unavailable
+  hourlyRate        Float?
+  website           String?
+  languages         String?   // JSON: string[]
+  serviceRadius     Int?      // miles
   isVerified        Boolean   @default(false)
   verificationToken String?
   refreshToken      String?
