@@ -11,7 +11,12 @@ const BID_INCLUDE = {
       isVerified: true, yearsExperience: true, rating: true, location: true,
     },
   },
-  job: { select: { id: true, title: true, budget: true, location: true, category: true, status: true, posterId: true } },
+  job: {
+    select: {
+      id: true, title: true, budget: true, location: true, category: true, status: true, posterId: true,
+      poster: { select: { id: true, firstName: true, lastName: true, profileImage: true } },
+    },
+  },
 };
 
 // ─── JSON helpers ─────────────────────────────────────────────────────────────
@@ -94,6 +99,24 @@ export async function getJobBids(req: AuthenticatedRequest, res: Response): Prom
   const [bids, total] = await prisma.$transaction([
     prisma.bid.findMany({ where: { jobId }, skip, take: limit, orderBy: { createdAt: 'desc' }, include: BID_INCLUDE }),
     prisma.bid.count({ where: { jobId } }),
+  ]);
+
+  const parsed = bids.map(b => parseBidData(b as unknown as Record<string, unknown>));
+  sendSuccess(res, buildPaginatedResult(parsed, total, { page, limit, skip }));
+}
+
+// ─── Get bids received on poster's jobs ───────────────────────────────────────
+
+export async function getReceivedBids(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { page, limit, skip } = getPagination(req);
+  const { status } = req.query;
+
+  const where: Record<string, unknown> = { job: { posterId: req.user!.userId } };
+  if (status) where.status = status;
+
+  const [bids, total] = await prisma.$transaction([
+    prisma.bid.findMany({ where, skip, take: limit, orderBy: { createdAt: 'desc' }, include: BID_INCLUDE }),
+    prisma.bid.count({ where }),
   ]);
 
   const parsed = bids.map(b => parseBidData(b as unknown as Record<string, unknown>));

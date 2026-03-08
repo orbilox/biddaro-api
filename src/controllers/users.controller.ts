@@ -99,27 +99,48 @@ export async function listContractors(req: AuthenticatedRequest, res: Response):
 
 export async function getUserStats(req: AuthenticatedRequest, res: Response): Promise<void> {
   const userId = req.user!.userId;
+  const role   = req.user!.role;
 
-  const [jobsCount, bidsCount, contractsCount, reviews, wallet] = await prisma.$transaction([
-    prisma.job.count({ where: { posterId: userId } }),
-    prisma.bid.count({ where: { contractorId: userId } }),
-    prisma.contract.count({ where: { OR: [{ posterId: userId }, { contractorId: userId }] } }),
-    prisma.review.findMany({ where: { revieweeId: userId } }),
-    prisma.wallet.findUnique({ where: { userId } }),
-  ]);
-
+  const reviews = await prisma.review.findMany({ where: { revieweeId: userId } });
   const avgRating = reviews.length > 0
-    ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+    ? Math.round((reviews.reduce((s, r) => s + r.rating, 0) / reviews.length) * 10) / 10
     : null;
 
-  sendSuccess(res, {
-    jobsPosted: jobsCount,
-    bidsPlaced: bidsCount,
-    contractsTotal: contractsCount,
-    averageRating: avgRating ? Math.round(avgRating * 10) / 10 : null,
-    reviewCount: reviews.length,
-    walletBalance: wallet?.balance ?? 0,
-  });
+  if (role === 'job_poster') {
+    // Get all job IDs posted by this user so we can count received bids
+    const myJobIds = await prisma.job
+      .findMany({ where: { posterId: userId }, select: { id: true } })
+      .then((rows) => rows.map((r) => r.id));
+
+    const [activeJobs, totalBidsReceived, activeContracts] = await Promise.all([
+      prisma.job.count({ where: { posterId: userId, status: 'open' } }),
+      myJobIds.length > 0
+        ? prisma.bid.count({ where: { jobId: { in: myJobIds } } })
+        : Promise.resolve(0),
+      prisma.contract.count({ where: { posterId: userId, status: 'active' } }),
+    ]);
+
+    sendSuccess(res, {
+      activeJobs,
+      totalBidsReceived,
+      activeContracts,
+      reviewCount: reviews.length,
+      averageRating: avgRating,
+    });
+  } else {
+    // contractor
+    const [activeBids, jobsWon] = await Promise.all([
+      prisma.bid.count({ where: { contractorId: userId, status: 'pending' } }),
+      prisma.contract.count({ where: { contractorId: userId } }),
+    ]);
+
+    sendSuccess(res, {
+      activeBids,
+      jobsWon,
+      reviewCount: reviews.length,
+      averageRating: avgRating,
+    });
+  }
 }
 
 // ─── Delete account (soft) ────────────────────────────────────────────────────
