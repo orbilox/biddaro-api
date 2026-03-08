@@ -10,6 +10,8 @@ import disputeRoutes from './disputes.routes';
 import reviewRoutes from './reviews.routes';
 import notificationRoutes from './notifications.routes';
 import uploadRoutes from './upload.routes';
+import aiRoutes from './ai.routes';
+import imageGenRoutes from './image-gen.routes';
 
 const router = Router();
 
@@ -30,6 +32,8 @@ router.get('/', (_req: Request, res: Response) => {
       '/api/v1/reviews',
       '/api/v1/notifications',
       '/api/v1/upload',
+      '/api/v1/ai',
+      '/api/v1/image-gen',
     ],
   });
 });
@@ -45,5 +49,7 @@ router.use('/disputes', disputeRoutes);
 router.use('/reviews', reviewRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/upload', uploadRoutes);
+router.use('/ai', aiRoutes);
+router.use('/image-gen', imageGenRoutes);
 
 export default router;
