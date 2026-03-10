@@ -5,7 +5,7 @@ import { authenticate } from '../middleware/auth';
 import {
   getMyContracts, getContract, updateMilestones,
   fundEscrow, startMilestone, submitMilestone, approveMilestone,
-  completeContract, cancelContract,
+  completeContract, cancelContract, issueNOC, getNOC,
 } from '../controllers/contracts.controller';
 
 const router = Router();
@@ -36,5 +36,9 @@ router.post('/:id/milestones/approve', authenticate, validate([
 // ─── Contract lifecycle ───────────────────────────────────────────────────────
 router.post('/:id/complete', authenticate, completeContract);
 router.post('/:id/cancel',   authenticate, cancelContract);
+
+// ─── NOC Certificate ──────────────────────────────────────────────────────────
+router.post('/:id/noc', authenticate, issueNOC);
+router.get('/:id/noc',  authenticate, getNOC);
 
 export default router;

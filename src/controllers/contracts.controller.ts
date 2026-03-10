@@ -396,6 +396,75 @@ export async function cancelContract(req: AuthenticatedRequest, res: Response): 
   sendSuccess(res, null, 'Contract cancelled');
 }
 
+// ─── Issue NOC Certificate ────────────────────────────────────────────────────
+// Only the job poster can issue; only for completed contracts; one-time only.
+
+export async function issueNOC(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const contract = await prisma.contract.findUnique({
+    where: { id: req.params.id },
+    include: {
+      job:        { select: { id: true, title: true, category: true, location: true } },
+      contractor: { select: { id: true, firstName: true, lastName: true } },
+      poster:     { select: { id: true, firstName: true, lastName: true } },
+    },
+  });
+  if (!contract) { sendNotFound(res, 'Contract'); return; }
+  if (contract.posterId !== req.user!.userId) { sendForbidden(res); return; }
+  if (contract.status !== 'completed') { sendError(res, 'NOC can only be issued for completed contracts', 400); return; }
+  if (contract.nocIssuedAt) { sendError(res, 'NOC certificate has already been issued for this contract', 409); return; }
+
+  const { note } = req.body as { note?: string };
+
+  const updated = await prisma.contract.update({
+    where: { id: contract.id },
+    data: { nocIssuedAt: new Date(), nocIssuerNote: note?.trim() || null },
+  });
+
+  await notify(
+    contract.contractorId,
+    'noc_issued',
+    'NOC Certificate Issued! 🏆',
+    `${contract.poster?.firstName} ${contract.poster?.lastName} has issued a No Objection Certificate for "${contract.job?.title}". Download it from your contract page.`,
+    { contractId: contract.id },
+  );
+
+  sendSuccess(res, { nocIssuedAt: updated.nocIssuedAt, nocIssuerNote: updated.nocIssuerNote }, 'NOC certificate issued successfully');
+}
+
+// ─── Get NOC Certificate data ─────────────────────────────────────────────────
+// Both poster and contractor can fetch the certificate details.
+
+export async function getNOC(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const contract = await prisma.contract.findUnique({
+    where: { id: req.params.id },
+    include: {
+      job:        { select: { id: true, title: true, category: true, location: true } },
+      contractor: { select: { id: true, firstName: true, lastName: true, profileImage: true } },
+      poster:     { select: { id: true, firstName: true, lastName: true, profileImage: true } },
+      review:     { select: { rating: true, comment: true, createdAt: true } },
+    },
+  });
+  if (!contract) { sendNotFound(res, 'Contract'); return; }
+
+  const userId = req.user!.userId;
+  if (contract.posterId !== userId && contract.contractorId !== userId) { sendForbidden(res); return; }
+  if (!contract.nocIssuedAt) { sendError(res, 'No NOC certificate has been issued for this contract yet', 404); return; }
+
+  sendSuccess(res, {
+    certificateNumber: `NOC-${contract.id.slice(-8).toUpperCase()}`,
+    contractId:  contract.id,
+    nocIssuedAt: contract.nocIssuedAt,
+    nocIssuerNote: contract.nocIssuerNote,
+    job:         contract.job,
+    contractor:  contract.contractor,
+    poster:      contract.poster,
+    totalAmount: contract.totalAmount,
+    currency:    contract.currency,
+    completedAt: contract.completedAt,
+    review:      contract.review ? { rating: contract.review.rating, comment: contract.review.comment } : null,
+  });
+}
+
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 async function notify(userId: string, type: string, title: string, message: string, data?: Record<string, unknown>) {
