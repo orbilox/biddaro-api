@@ -7,6 +7,9 @@ import {
   fundEscrow, startMilestone, submitMilestone, approveMilestone,
   completeContract, cancelContract, issueNOC, getNOC,
 } from '../controllers/contracts.controller';
+import {
+  listClarifications, createClarification, answerClarification,
+} from '../controllers/clarifications.controller';
 
 const router = Router();
 
@@ -40,5 +43,14 @@ router.post('/:id/cancel',   authenticate, cancelContract);
 // ─── NOC Certificate ──────────────────────────────────────────────────────────
 router.post('/:id/noc', authenticate, issueNOC);
 router.get('/:id/noc',  authenticate, getNOC);
+
+// ─── Clarifications ───────────────────────────────────────────────────────────
+router.get('/:id/clarifications',   authenticate, listClarifications);
+router.post('/:id/clarifications',  authenticate, validate([
+  body('question').trim().notEmpty().withMessage('Question is required'),
+]), createClarification);
+router.put('/:id/clarifications/:clarificationId/answer', authenticate, validate([
+  body('answer').trim().notEmpty().withMessage('Answer is required'),
+]), answerClarification);
 
 export default router;

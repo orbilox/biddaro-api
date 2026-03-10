@@ -51,6 +51,8 @@ model User {
   receivedReviews       Review[]     @relation("reviewee")
   transactions          Transaction[]
   notifications         Notification[]
+  clarificationsAsked    ClarificationRequest[] @relation("clarificationAsker")
+  clarificationsAnswered ClarificationRequest[] @relation("clarificationAnswerer")
 }
 
 model Job {
@@ -128,9 +130,10 @@ model Contract {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  transactions  Transaction[]
-  dispute       Dispute?
-  review        Review?
+  transactions     Transaction[]
+  dispute          Dispute?
+  review           Review?
+  clarifications   ClarificationRequest[]
 }
 
 model Wallet {
@@ -221,6 +224,22 @@ model Estimation {
   confidence    Float     @default(0.85)
   metadata      String?   // JSON
   createdAt     DateTime  @default(now())
+}
+
+model ClarificationRequest {
+  id           String    @id @default(cuid())
+  contractId   String
+  contract     Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  askedById    String
+  askedBy      User      @relation("clarificationAsker",    fields: [askedById],    references: [id])
+  question     String
+  answer       String?
+  answeredById String?
+  answeredBy   User?     @relation("clarificationAnswerer", fields: [answeredById], references: [id])
+  status       String    @default("pending") // pending | answered | closed
+  answeredAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
 
 model Notification {
