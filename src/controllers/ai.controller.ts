@@ -16,18 +16,24 @@ You can help with:
 - Safety guidelines on construction sites
 - Maintenance and repair advice
 - Understanding bids, contracts, and payments
+- Analyzing construction photos and site images
 
 Rules:
-- Be concise, friendly, and practical. Keep responses under 300 words unless a detailed breakdown is genuinely needed.
+- Be concise, friendly, and practical. Use markdown formatting (headers, lists, bold) for clarity.
 - When estimating costs, always provide realistic price ranges (e.g. "$5,000–$15,000 depending on materials and region").
 - Always recommend consulting a licensed professional for complex structural, electrical, plumbing, or permit work.
+- If an image is attached, describe what you see and provide relevant construction advice based on it.
 - Do NOT answer questions unrelated to construction, home improvement, or the Biddaro platform.
 - If asked about Biddaro, explain it's a marketplace connecting homeowners with verified contractors for bids, contracts, and secure escrow payments.`;
 
-// ─── Message type ──────────────────────────────────────────────────────────
+// ─── Content types (multimodal) ────────────────────────────────────────────
+type TextPart = { type: 'text'; text: string };
+type ImagePart = { type: 'image_url'; image_url: { url: string; detail?: string } };
+type ContentPart = TextPart | ImagePart;
+
 interface ChatMessage {
   role: 'user' | 'assistant';
-  content: string;
+  content: string | ContentPart[];
 }
 
 // ─── POST /api/v1/ai/chat ──────────────────────────────────────────────────
@@ -42,8 +48,12 @@ export const chat = async (req: Request, res: Response): Promise<void> => {
 
     // Validate each message shape
     for (const msg of messages) {
-      if (!msg.role || !msg.content || !['user', 'assistant'].includes(msg.role)) {
-        sendError(res, 'Each message must have role (user|assistant) and content', 400);
+      if (!msg.role || !['user', 'assistant'].includes(msg.role)) {
+        sendError(res, 'Each message must have role (user|assistant)', 400);
+        return;
+      }
+      if (msg.content === undefined || msg.content === null) {
+        sendError(res, 'Each message must have content', 400);
         return;
       }
     }
@@ -57,13 +67,13 @@ export const chat = async (req: Request, res: Response): Promise<void> => {
     const openai = new OpenAI({ apiKey });
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         // Keep last 12 messages for context window efficiency
-        ...messages.slice(-12).map((m) => ({ role: m.role, content: m.content })),
+        ...(messages.slice(-12) as any),
       ],
-      max_tokens: 600,
+      max_tokens: 1500,
       temperature: 0.7,
     });
 
