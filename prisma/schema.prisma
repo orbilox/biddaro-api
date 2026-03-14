@@ -53,6 +53,7 @@ model User {
   notifications         Notification[]
   clarificationsAsked    ClarificationRequest[] @relation("clarificationAsker")
   clarificationsAnswered ClarificationRequest[] @relation("clarificationAnswerer")
+  depositRequests        DepositRequest[]
 }
 
 model Job {
@@ -253,4 +254,21 @@ model Notification {
   isRead    Boolean   @default(false)
   readAt    DateTime?
   createdAt DateTime  @default(now())
+}
+
+model DepositRequest {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount        Float
+  transactionId String
+  screenshotUrl String
+  senderName    String?
+  senderBank    String?
+  status        String    @default("pending")  // pending | approved | rejected
+  adminNote     String?
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
