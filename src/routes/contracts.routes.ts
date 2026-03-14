@@ -4,7 +4,8 @@ import { validate } from '../middleware/validate';
 import { authenticate } from '../middleware/auth';
 import {
   getMyContracts, getContract, updateMilestones,
-  fundEscrow, startMilestone, submitMilestone, approveMilestone,
+  fundEscrow, fundMilestoneEscrow,
+  startMilestone, submitMilestone, approveMilestone,
   completeContract, cancelContract, issueNOC, getNOC,
 } from '../controllers/contracts.controller';
 import {
@@ -17,7 +18,12 @@ router.get('/',    authenticate, getMyContracts);
 router.get('/:id', authenticate, getContract);
 
 // ─── Escrow ───────────────────────────────────────────────────────────────────
-router.post('/:id/fund', authenticate, fundEscrow);
+// Full upfront:   POST /:id/fund              body: (none)
+// Per-milestone:  POST /:id/fund-milestone    body: { milestoneIndex: number }
+router.post('/:id/fund',          authenticate, fundEscrow);
+router.post('/:id/fund-milestone', authenticate, validate([
+  body('milestoneIndex').isInt({ min: 0 }).withMessage('Valid milestone index is required'),
+]), fundMilestoneEscrow);
 
 // ─── Milestones ───────────────────────────────────────────────────────────────
 router.put('/:id/milestones', authenticate, validate([

@@ -59,8 +59,8 @@ export async function getContract(req: AuthenticatedRequest, res: Response): Pro
 }
 
 // ─── Fund escrow ──────────────────────────────────────────────────────────────
-// Poster confirms they will pay the contract amount into escrow.
-// In a real system this would charge a payment method; here we record the commitment.
+// Deducts the full contract amount from the job poster's wallet balance and
+// locks it in escrow. Contractor can only begin work after this succeeds.
 
 export async function fundEscrow(req: AuthenticatedRequest, res: Response): Promise<void> {
   const contract = await prisma.contract.findUnique({ where: { id: req.params.id } });
@@ -69,11 +69,31 @@ export async function fundEscrow(req: AuthenticatedRequest, res: Response): Prom
   if (contract.status !== 'active') { sendError(res, 'Contract is not active', 400); return; }
   if (contract.escrowFunded) { sendError(res, 'Escrow is already funded', 400); return; }
 
+  // ── Guard: poster must have enough wallet balance ──────────────────────────
+  const wallet = await prisma.wallet.findUnique({ where: { userId: contract.posterId } });
+  const escrowAmount = Number(contract.totalAmount);
+  if (!wallet || Number(wallet.balance) < escrowAmount) {
+    sendError(
+      res,
+      `Insufficient wallet balance. You need $${escrowAmount.toFixed(2)} but your balance is $${Number(wallet?.balance ?? 0).toFixed(2)}. Please deposit funds first.`,
+      400,
+    );
+    return;
+  }
+
+  // ── Atomically deduct from wallet + mark contract funded ──────────────────
   await prisma.$transaction([
+    // Deduct from job poster's wallet balance
+    prisma.wallet.update({
+      where: { userId: contract.posterId },
+      data: { balance: { decrement: escrowAmount } },
+    }),
+    // Mark contract escrow as funded
     prisma.contract.update({
       where: { id: contract.id },
       data: { escrowFunded: true, escrowAmount: contract.totalAmount },
     }),
+    // Record the debit transaction
     prisma.transaction.create({
       data: {
         userId: contract.posterId,
@@ -89,10 +109,107 @@ export async function fundEscrow(req: AuthenticatedRequest, res: Response): Prom
 
   await notify(contract.contractorId, 'escrow_funded',
     'Escrow Funded 🔒',
-    `The client has funded the escrow ($${Number(contract.totalAmount).toFixed(2)}). You can now start working!`,
+    `The client has funded the escrow ($${escrowAmount.toFixed(2)}). You can now start working!`,
     { contractId: contract.id });
 
   sendSuccess(res, null, 'Escrow funded successfully. Work can now begin.');
+}
+
+// ─── Fund per-milestone escrow ────────────────────────────────────────────────
+// Alternative to full upfront escrow: the job poster funds each milestone
+// individually, just before the contractor starts work on it.
+//
+//  Full upfront  →  POST /:id/fund             (locks entire contract.totalAmount)
+//  Per-milestone →  POST /:id/fund-milestone   (locks one milestone at a time)
+//
+// Both modes work in parallel — the poster chooses whichever they prefer.
+
+export async function fundMilestoneEscrow(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const contract = await prisma.contract.findUnique({ where: { id: req.params.id } });
+  if (!contract) { sendNotFound(res, 'Contract'); return; }
+  if (contract.posterId !== req.user!.userId) { sendForbidden(res); return; }
+  if (contract.status !== 'active') { sendError(res, 'Contract is not active', 400); return; }
+  if (contract.escrowFunded) {
+    sendError(res, 'Full escrow is already funded for this contract. Payments are released per milestone approval.', 400);
+    return;
+  }
+
+  const milestones: Array<Record<string, unknown>> = tryParse(contract.milestones) || [];
+  const { milestoneIndex } = req.body;
+
+  if (milestoneIndex === undefined || milestoneIndex < 0 || milestoneIndex >= milestones.length) {
+    sendError(res, 'Invalid milestone index', 400); return;
+  }
+
+  const milestone = milestones[milestoneIndex];
+
+  if (milestone.escrowFunded) {
+    sendError(res, 'Escrow is already funded for this milestone', 400); return;
+  }
+  if (milestone.status === 'approved') {
+    sendError(res, 'This milestone is already completed and paid out', 400); return;
+  }
+
+  const milestoneAmount = Number(milestone.amount);
+
+  // ── Guard: poster must have enough wallet balance ──────────────────────────
+  const wallet = await prisma.wallet.findUnique({ where: { userId: contract.posterId } });
+  if (!wallet || Number(wallet.balance) < milestoneAmount) {
+    sendError(
+      res,
+      `Insufficient wallet balance. You need $${milestoneAmount.toFixed(2)} but your balance is $${Number(wallet?.balance ?? 0).toFixed(2)}. Please deposit funds first.`,
+      400,
+    );
+    return;
+  }
+
+  // Mark this specific milestone as escrow-funded in the JSON
+  milestones[milestoneIndex] = { ...milestone, escrowFunded: true };
+
+  // escrowAmount on the contract tracks total deposited across BOTH modes
+  const newEscrowAmount = Number(contract.escrowAmount ?? 0) + milestoneAmount;
+
+  await prisma.$transaction([
+    // Deduct from poster's wallet
+    prisma.wallet.update({
+      where: { userId: contract.posterId },
+      data: { balance: { decrement: milestoneAmount } },
+    }),
+    // Update milestones JSON + increment the contract's running escrowAmount
+    prisma.contract.update({
+      where: { id: contract.id },
+      data: {
+        milestones: JSON.stringify(milestones),
+        escrowAmount: newEscrowAmount,
+      },
+    }),
+    // Record the debit transaction
+    prisma.transaction.create({
+      data: {
+        userId: contract.posterId,
+        contractId: contract.id,
+        type: 'debit',
+        amount: milestoneAmount,
+        description: `Milestone escrow funded: ${milestone.title as string}`,
+        status: 'completed',
+        metadata: JSON.stringify({
+          type: 'milestone_escrow_fund',
+          milestoneIndex,
+          milestoneTitle: milestone.title,
+        }),
+      },
+    }),
+  ]);
+
+  await notify(
+    contract.contractorId,
+    'milestone_escrow_funded',
+    'Milestone Escrow Funded 🔒',
+    `Client funded escrow for milestone "${milestone.title as string}" ($${milestoneAmount.toFixed(2)}). You can now start work on it!`,
+    { contractId: contract.id },
+  );
+
+  sendSuccess(res, null, `Escrow funded for milestone "${milestone.title as string}".`);
 }
 
 // ─── Start a milestone ────────────────────────────────────────────────────────
@@ -103,7 +220,6 @@ export async function startMilestone(req: AuthenticatedRequest, res: Response): 
   if (!contract) { sendNotFound(res, 'Contract'); return; }
   if (contract.contractorId !== req.user!.userId) { sendForbidden(res); return; }
   if (contract.status !== 'active') { sendError(res, 'Contract is not active', 400); return; }
-  if (!contract.escrowFunded) { sendError(res, 'Cannot start work — escrow has not been funded by the client yet', 400); return; }
 
   const milestones: Array<Record<string, unknown>> = tryParse(contract.milestones) || [];
   const { milestoneIndex } = req.body;
@@ -113,6 +229,13 @@ export async function startMilestone(req: AuthenticatedRequest, res: Response): 
   }
   if (milestones[milestoneIndex].status !== 'pending') {
     sendError(res, 'Only a pending milestone can be started', 400); return;
+  }
+
+  // Accept either full-contract escrow OR per-milestone escrow for this specific milestone
+  const thisEscrowFunded = milestones[milestoneIndex].escrowFunded === true;
+  if (!contract.escrowFunded && !thisEscrowFunded) {
+    sendError(res, 'Cannot start work — escrow has not been funded for this milestone yet. Ask the client to fund it first.', 400);
+    return;
   }
 
   milestones[milestoneIndex] = {
@@ -183,7 +306,6 @@ export async function approveMilestone(req: AuthenticatedRequest, res: Response)
   if (!contract) { sendNotFound(res, 'Contract'); return; }
   if (contract.posterId !== req.user!.userId) { sendForbidden(res); return; }
   if (contract.status !== 'active') { sendError(res, 'Contract is not active', 400); return; }
-  if (!contract.escrowFunded) { sendError(res, 'Escrow not funded', 400); return; }
 
   const milestones: Array<Record<string, unknown>> = tryParse(contract.milestones) || [];
   const { milestoneIndex } = req.body;
@@ -193,6 +315,12 @@ export async function approveMilestone(req: AuthenticatedRequest, res: Response)
   }
   if (milestones[milestoneIndex].status !== 'completed') {
     sendError(res, 'Milestone must be completed (submitted for review) before approving', 400); return;
+  }
+
+  // Accept full-contract escrow OR per-milestone escrow for this specific milestone
+  const thisEscrowFunded = milestones[milestoneIndex].escrowFunded === true;
+  if (!contract.escrowFunded && !thisEscrowFunded) {
+    sendError(res, 'Escrow has not been funded for this milestone — ask the client to fund it before approving.', 400); return;
   }
 
   const milestone = milestones[milestoneIndex];
@@ -311,6 +439,7 @@ export async function completeContract(req: AuthenticatedRequest, res: Response)
   if (!contract) { sendNotFound(res, 'Contract'); return; }
   if (contract.posterId !== req.user!.userId) { sendForbidden(res); return; }
   if (contract.status !== 'active') { sendError(res, 'Contract is not active', 400); return; }
+  if (!contract.escrowFunded) { sendError(res, 'Escrow must be funded before completing the contract', 400); return; }
 
   const milestones: Array<Record<string, unknown>> = tryParse(contract.milestones) || [];
   const hasMilestones = milestones.length > 0;
@@ -365,24 +494,44 @@ export async function cancelContract(req: AuthenticatedRequest, res: Response): 
 
   const otherId = userId === contract.posterId ? contract.contractorId : contract.posterId;
 
-  // If escrow was funded and no milestones have been released, create a refund record
+  // Refund logic works for BOTH escrow modes:
+  //   Full upfront:   escrowAmount = totalAmount  → refund = totalAmount − releasedAmount
+  //   Per-milestone:  escrowAmount = Σ funded milestones → refund = funded − releasedAmount
+  // Using escrowAmount (not totalAmount) ensures unfunded milestones are never "refunded".
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const refundOps: any[] = [
     prisma.contract.update({ where: { id: contract.id }, data: { status: 'cancelled' } }),
     prisma.job.update({ where: { id: contract.jobId }, data: { status: 'open' } }),
   ];
 
-  if (contract.escrowFunded && Number(contract.releasedAmount) === 0) {
+  const totalInEscrow = Number(contract.escrowAmount ?? 0);
+  const refundAmount  = totalInEscrow - Number(contract.releasedAmount);
+
+  if (totalInEscrow > 0 && refundAmount > 0) {
+    const isPartial = Number(contract.releasedAmount) > 0;
     refundOps.push(
+      // Restore poster's wallet balance with the unspent escrow
+      prisma.wallet.update({
+        where: { userId: contract.posterId },
+        data: { balance: { increment: refundAmount } },
+      }),
+      // Record the refund transaction for audit trail
       prisma.transaction.create({
         data: {
           userId: contract.posterId,
           contractId: contract.id,
           type: 'refund',
-          amount: Number(contract.totalAmount),
-          description: `Escrow refunded — contract cancelled`,
+          amount: refundAmount,
+          description: isPartial
+            ? `Partial escrow refund — contract cancelled (${Number(contract.releasedAmount).toFixed(2)} already released to contractor)`
+            : `Escrow refunded — contract cancelled`,
           status: 'completed',
-          metadata: JSON.stringify({ type: 'escrow_refund' }),
+          metadata: JSON.stringify({
+            type: 'escrow_refund',
+            escrowAmount: contract.escrowAmount,
+            releasedAmount: contract.releasedAmount,
+            refundAmount,
+          }),
         },
       })
     );

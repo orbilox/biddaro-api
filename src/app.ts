@@ -21,19 +21,27 @@ app.use(cors({
 }));
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────
+// In development: limiters are registered but instantly skipped — no false
+// "Too many requests" errors while you're actively building / testing.
+// In production: limits are enforced as configured.
+
 const limiter = rateLimit({
-  windowMs: config.rateLimit.windowMs,
-  max: config.rateLimit.maxRequests,
+  windowMs: config.rateLimit.windowMs,           // default 15 min
+  max: config.rateLimit.maxRequests,             // default 100  (override via RATE_LIMIT_MAX)
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => config.isDev,                      // ← bypass entirely in dev
   message: { success: false, message: 'Too many requests, please try again later.' },
 });
 app.use('/api/', limiter);
 
-// Stricter limit for auth endpoints
+// Stricter limit for auth endpoints (brute-force protection)
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
+  windowMs: 15 * 60 * 1000,                     // 15-minute window
+  max: 20,                                       // 20 login/register attempts per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => config.isDev,                      // ← bypass entirely in dev
   message: { success: false, message: 'Too many auth attempts, please try again in 15 minutes.' },
 });
 app.use('/api/v1/auth/login', authLimiter);
