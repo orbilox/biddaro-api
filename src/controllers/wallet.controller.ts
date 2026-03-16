@@ -126,7 +126,7 @@ export async function getWalletStats(req: AuthenticatedRequest, res: Response): 
     balance: wallet?.balance ?? 0,
     pendingBalance: wallet?.pendingBalance ?? 0,
     totalEarned: wallet?.totalEarned ?? 0,
-    thisMonthEarned: Number(monthlyCredit._sum.amount ?? 0),
+    thisMonthEarnings: Number(monthlyCredit._sum.amount ?? 0),
     thisMonthFees: Number(monthlyFees._sum.amount ?? 0),
     pendingTransactions: pendingTx,
   });

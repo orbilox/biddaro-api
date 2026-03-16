@@ -13,6 +13,7 @@ import uploadRoutes from './upload.routes';
 import aiRoutes from './ai.routes';
 import imageGenRoutes from './image-gen.routes';
 import depositRequestRoutes from './depositRequests.routes';
+import adminRoutes from './admin.routes';
 
 const router = Router();
 
@@ -36,6 +37,7 @@ router.get('/', (_req: Request, res: Response) => {
       '/api/v1/ai',
       '/api/v1/image-gen',
       '/api/v1/deposit-requests',
+      '/api/v1/admin',
     ],
   });
 });
@@ -54,5 +56,6 @@ router.use('/upload', uploadRoutes);
 router.use('/ai', aiRoutes);
 router.use('/image-gen', imageGenRoutes);
 router.use('/deposit-requests', depositRequestRoutes);
+router.use('/admin', adminRoutes);
 
 export default router;

@@ -20,6 +20,22 @@ async function main() {
 
   const hash = await bcrypt.hash('password123', 12);
 
+  // ─── Create admin user ────────────────────────────────────────────────────
+  const admin = await prisma.user.upsert({
+    where: { email: 'admin@biddaro.com' },
+    update: {},
+    create: {
+      email: 'admin@biddaro.com', passwordHash: hash,
+      firstName: 'Super', lastName: 'Admin', role: 'admin',
+      isVerified: true, isActive: true,
+    },
+  });
+  await prisma.wallet.upsert({
+    where: { userId: admin.id },
+    update: {},
+    create: { userId: admin.id, balance: 0, pendingBalance: 0, totalEarned: 0 },
+  });
+
   // ─── Create users ─────────────────────────────────────────────────────────
   const [alice, bob, carol, dave, eve, frank] = await Promise.all([
     prisma.user.create({ data: {
