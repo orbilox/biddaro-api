@@ -256,6 +256,23 @@ model Notification {
   createdAt DateTime  @default(now())
 }
 
+model BankSettings {
+  id                  String   @id @default(cuid())
+  bankName            String
+  accountHolderName   String
+  accountNumber       String
+  routingNumber       String?
+  ifscCode            String?
+  swiftCode           String?
+  branch              String?
+  bankAddress         String?
+  paymentInstructions String?
+  isActive            Boolean  @default(true)
+  sortOrder           Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
 model DepositRequest {
   id            String    @id @default(cuid())
   userId        String
