@@ -71,6 +71,7 @@ model Job {
   location    String
   skills      String?   // JSON
   status      String    @default("open")   // open|in_progress|completed|closed|cancelled
+  projectType String    @default("standard") // standard|government|corporate
   images      String?   // JSON
   documents   String?   // JSON
   viewCount   Int       @default(0)
@@ -100,6 +101,7 @@ model Bid {
   documents     String?   // JSON array of uploaded file URLs
   milestones    String?   // JSON array of { title, description, amount, dueDate }
   status        String    @default("pending")  // pending|accepted|declined|withdrawn
+  isPriority    Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

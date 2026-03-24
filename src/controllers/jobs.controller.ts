@@ -75,7 +75,7 @@ export async function getJob(req: AuthenticatedRequest, res: Response): Promise<
 // ─── Create job ───────────────────────────────────────────────────────────────
 
 export async function createJob(req: AuthenticatedRequest, res: Response): Promise<void> {
-  const { title, description, category, budget, currency, timeline, startDate, endDate, location, skills, images, documents } = req.body;
+  const { title, description, category, budget, currency, timeline, startDate, endDate, location, skills, images, documents, projectType } = req.body;
 
   const job = await prisma.job.create({
     data: {
@@ -83,6 +83,7 @@ export async function createJob(req: AuthenticatedRequest, res: Response): Promi
       title, description, category, budget: parseFloat(budget),
       currency: currency || 'USD',
       budgetType: req.body.budgetType || 'fixed',
+      projectType: ['standard', 'government', 'corporate'].includes(projectType) ? projectType : 'standard',
       location,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
