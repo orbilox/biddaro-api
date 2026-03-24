@@ -22,6 +22,11 @@ import {
   getRecentActivity,
   broadcastNotification,
 } from '../controllers/admin.controller';
+import {
+  adminPremiumStats,
+  adminPremiumList,
+  adminPremiumRevenue,
+} from '../controllers/premium.controller';
 
 const router = Router();
 
@@ -63,5 +68,10 @@ router.delete('/reviews/:id', adminDeleteReview);
 
 // ── Notifications ────────────────────────────────────────────────────────────
 router.post('/broadcast', broadcastNotification);
+
+// ── Premium Management ────────────────────────────────────────────────────────
+router.get('/premium/stats', adminPremiumStats);
+router.get('/premium/subscriptions', adminPremiumList);
+router.get('/premium/revenue', adminPremiumRevenue);
 
 export default router;

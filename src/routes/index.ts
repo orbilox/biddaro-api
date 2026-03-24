@@ -15,6 +15,7 @@ import imageGenRoutes from './image-gen.routes';
 import depositRequestRoutes from './depositRequests.routes';
 import bankSettingsRoutes from './bankSettings.routes';
 import adminRoutes from './admin.routes';
+import premiumRoutes from './premium.routes';
 
 const router = Router();
 
@@ -40,6 +41,7 @@ router.get('/', (_req: Request, res: Response) => {
       '/api/v1/deposit-requests',
       '/api/v1/bank-settings',
       '/api/v1/admin',
+      '/api/v1/premium',
     ],
   });
 });
@@ -60,5 +62,6 @@ router.use('/image-gen', imageGenRoutes);
 router.use('/deposit-requests', depositRequestRoutes);
 router.use('/bank-settings', bankSettingsRoutes);
 router.use('/admin', adminRoutes);
+router.use('/premium', premiumRoutes);
 
 export default router;

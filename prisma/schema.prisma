@@ -54,6 +54,7 @@ model User {
   clarificationsAsked    ClarificationRequest[] @relation("clarificationAsker")
   clarificationsAnswered ClarificationRequest[] @relation("clarificationAnswerer")
   depositRequests        DepositRequest[]
+  premiumSubscriptions   PremiumSubscription[]
 }
 
 model Job {
@@ -290,4 +291,22 @@ model DepositRequest {
   reviewedAt    DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+}
+
+// ─── Premium Subscriptions ───────────────────────────────────────────────────
+
+model PremiumSubscription {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan        String    // monthly | quarterly | annual
+  amount      Float
+  currency    String    @default("USD")
+  status      String    @default("active")  // active | cancelled | expired
+  autoRenew   Boolean   @default(true)
+  startDate   DateTime  @default(now())
+  expiresAt   DateTime
+  cancelledAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
