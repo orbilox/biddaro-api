@@ -109,7 +109,7 @@ export async function updateJob(req: AuthenticatedRequest, res: Response): Promi
     return;
   }
 
-  const allowedFields = ['title', 'description', 'category', 'budget', 'timeline', 'location', 'skills', 'images', 'status'];
+  const allowedFields = ['title', 'description', 'category', 'budget', 'timeline', 'location', 'skills', 'images', 'status', 'projectType'];
   const data: Record<string, unknown> = {};
   for (const f of allowedFields) {
     if (req.body[f] !== undefined) {

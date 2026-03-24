@@ -40,7 +40,7 @@ function parseBidData(bid: Record<string, unknown>): Record<string, unknown> {
 
 export async function createBid(req: AuthenticatedRequest, res: Response): Promise<void> {
   const { jobId } = req.params;
-  const { amount, estimatedDays, proposal, portfolio, certificates, documents, milestones } = req.body;
+  const { amount, estimatedDays, proposal, portfolio, certificates, documents, milestones, isPriority } = req.body;
 
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job) { sendNotFound(res, 'Job'); return; }
@@ -65,6 +65,7 @@ export async function createBid(req: AuthenticatedRequest, res: Response): Promi
       // New fields: store arrays as JSON strings
       documents:  Array.isArray(documents)  && documents.length  > 0 ? JSON.stringify(documents)  : undefined,
       milestones: Array.isArray(milestones) && milestones.length > 0 ? JSON.stringify(milestones) : undefined,
+      isPriority: isPriority === true,
     },
     include: BID_INCLUDE,
   });
