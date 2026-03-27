@@ -15,18 +15,24 @@ function safeUser(user: Record<string, unknown>) {
 // ─── Register ─────────────────────────────────────────────────────────────────
 
 export async function register(req: AuthenticatedRequest, res: Response): Promise<void> {
-  const { email, password, firstName, lastName, role, phone } = req.body;
+  const { email, password, firstName, lastName, role, phone, country } = req.body;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) { sendError(res, 'Email already in use', 409); return; }
 
+  const validCountries = ['IN', 'AE', 'SG', 'US'];
   const passwordHash = await hashPassword(password);
   const user = await prisma.user.create({
-    data: { email, passwordHash, firstName, lastName, role, phone },
+    data: {
+      email, passwordHash, firstName, lastName, role, phone,
+      country: validCountries.includes(country) ? country : null,
+    },
   });
 
-  // Auto-create wallet for every user
-  await prisma.wallet.create({ data: { userId: user.id } });
+  // Auto-create wallet with currency based on country
+  const countryCurrency: Record<string, string> = { IN: 'INR', AE: 'AED', SG: 'SGD', US: 'USD' };
+  const walletCurrency = (country && countryCurrency[country]) || 'USD';
+  await prisma.wallet.create({ data: { userId: user.id, currency: walletCurrency } });
 
   const payload = { userId: user.id, email: user.email, role: user.role };
   const accessToken = signAccessToken(payload);

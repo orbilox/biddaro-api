@@ -17,6 +17,7 @@ model User {
   role              String    // "job_poster" | "contractor" | "admin"
   profileImage      String?
   phone             String?
+  country           String?   // IN | AE | SG | US
   location          String?
   bio               String?
   skills            String?   // JSON array stored as string
@@ -267,6 +268,8 @@ model BankSettings {
   routingNumber       String?
   ifscCode            String?
   swiftCode           String?
+  ibanNumber          String?
+  country             String?   // IN | AE | SG | US
   branch              String?
   bankAddress         String?
   paymentInstructions String?

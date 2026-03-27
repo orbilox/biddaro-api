@@ -12,7 +12,7 @@ export async function getBankSettings(req: AuthenticatedRequest, res: Response) 
     select: {
       id: true, bankName: true, accountHolderName: true,
       accountNumber: true, routingNumber: true, ifscCode: true,
-      swiftCode: true, branch: true, bankAddress: true,
+      swiftCode: true, ibanNumber: true, country: true, branch: true, bankAddress: true,
       paymentInstructions: true, sortOrder: true,
     },
   });
@@ -37,7 +37,7 @@ export async function adminCreateBankSettings(req: AuthenticatedRequest, res: Re
 
   const {
     bankName, accountHolderName, accountNumber,
-    routingNumber, ifscCode, swiftCode, branch,
+    routingNumber, ifscCode, swiftCode, ibanNumber, country, branch,
     bankAddress, paymentInstructions, isActive, sortOrder,
   } = req.body;
 
@@ -51,6 +51,8 @@ export async function adminCreateBankSettings(req: AuthenticatedRequest, res: Re
       routingNumber: routingNumber || null,
       ifscCode: ifscCode || null,
       swiftCode: swiftCode || null,
+      ibanNumber: ibanNumber || null,
+      country: country || null,
       branch: branch || null,
       bankAddress: bankAddress || null,
       paymentInstructions: paymentInstructions || null,
@@ -70,7 +72,7 @@ export async function adminUpdateBankSettings(req: AuthenticatedRequest, res: Re
   const { id } = req.params;
   const {
     bankName, accountHolderName, accountNumber,
-    routingNumber, ifscCode, swiftCode, branch,
+    routingNumber, ifscCode, swiftCode, ibanNumber, country, branch,
     bankAddress, paymentInstructions, isActive, sortOrder,
   } = req.body;
 
@@ -86,6 +88,8 @@ export async function adminUpdateBankSettings(req: AuthenticatedRequest, res: Re
       ...(routingNumber !== undefined && { routingNumber }),
       ...(ifscCode !== undefined && { ifscCode }),
       ...(swiftCode !== undefined && { swiftCode }),
+      ...(ibanNumber !== undefined && { ibanNumber }),
+      ...(country !== undefined && { country }),
       ...(branch !== undefined && { branch }),
       ...(bankAddress !== undefined && { bankAddress }),
       ...(paymentInstructions !== undefined && { paymentInstructions }),
