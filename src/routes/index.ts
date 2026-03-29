@@ -17,6 +17,7 @@ import bankSettingsRoutes from './bankSettings.routes';
 import adminRoutes from './admin.routes';
 import premiumRoutes from './premium.routes';
 import addonsRoutes from './addons.routes';
+import projectTrackingRoutes from './projectTracking.routes';
 
 const router = Router();
 
@@ -44,6 +45,7 @@ router.get('/', (_req: Request, res: Response) => {
       '/api/v1/admin',
       '/api/v1/premium',
       '/api/v1/addons',
+      '/api/v1/project-tracking',
     ],
   });
 });
@@ -66,5 +68,6 @@ router.use('/bank-settings', bankSettingsRoutes);
 router.use('/admin', adminRoutes);
 router.use('/premium', premiumRoutes);
 router.use('/addons', addonsRoutes);
+router.use('/project-tracking', projectTrackingRoutes);
 
 export default router;

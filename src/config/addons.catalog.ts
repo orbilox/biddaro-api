@@ -220,6 +220,29 @@ export const ADDONS_CATALOG: AddOnDefinition[] = [
     ],
   },
 
+  // ── Project Management ────────────────────────────────────────────────────
+  {
+    slug: 'live-project-tracking',
+    name: 'Live Project Tracking',
+    tagline: 'Real-time progress dashboard for every contract',
+    description: 'Contractors post live progress updates, photos, and completion percentages. Job posters get a live feed dashboard showing exactly where every project stands — no more chasing updates.',
+    category: 'Productivity',
+    icon: '📡',
+    price: 7.99,
+    pricingType: 'monthly',
+    targetRole: 'both',
+    features: [
+      'Contractor posts progress updates with % completion',
+      'Photo and note attachments on updates',
+      'Job poster sees live feed per contract',
+      'Visual progress bar per milestone',
+      'All update history with timestamps',
+      'Instant notification on new update',
+    ],
+    isNew: true,
+    isPopular: true,
+  },
+
   // ── Marketing ─────────────────────────────────────────────────────────────
   {
     slug: 'featured-profile',

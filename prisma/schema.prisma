@@ -57,6 +57,7 @@ model User {
   depositRequests        DepositRequest[]
   premiumSubscriptions   PremiumSubscription[]
   installedAddOns        UserAddOn[]
+  projectUpdates         ProjectUpdate[]       @relation("projectUpdates")
 }
 
 model Job {
@@ -140,6 +141,7 @@ model Contract {
   dispute          Dispute?
   review           Review?
   clarifications   ClarificationRequest[]
+  projectUpdates   ProjectUpdate[]
 }
 
 model Wallet {
@@ -313,6 +315,21 @@ model PremiumSubscription {
   cancelledAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+}
+
+// ─── Live Project Tracking ───────────────────────────────────────────────────
+
+model ProjectUpdate {
+  id              String    @id @default(cuid())
+  contractId      String
+  contract        Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  postedById      String
+  postedBy        User      @relation("projectUpdates", fields: [postedById], references: [id], onDelete: Cascade)
+  message         String
+  progressPercent Int?      // 0–100, optional
+  imageUrl        String?
+  type            String    @default("update") // update | note | photo | milestone
+  createdAt       DateTime  @default(now())
 }
 
 // ─── Add-Ons Marketplace ─────────────────────────────────────────────────────
