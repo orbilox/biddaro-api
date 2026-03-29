@@ -56,6 +56,7 @@ model User {
   clarificationsAnswered ClarificationRequest[] @relation("clarificationAnswerer")
   depositRequests        DepositRequest[]
   premiumSubscriptions   PremiumSubscription[]
+  installedAddOns        UserAddOn[]
 }
 
 model Job {
@@ -312,4 +313,18 @@ model PremiumSubscription {
   cancelledAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+}
+
+// ─── Add-Ons Marketplace ─────────────────────────────────────────────────────
+
+model UserAddOn {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addOnSlug   String    // references catalog slug (e.g. "invoice-generator")
+  installedAt DateTime  @default(now())
+  isActive    Boolean   @default(true)
+  settings    String?   // JSON: per-add-on configuration
+
+  @@unique([userId, addOnSlug])
 }

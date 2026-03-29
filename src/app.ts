@@ -14,7 +14,13 @@ const app = express();
 // ─── Security ─────────────────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-  origin: config.frontendUrl,
+  origin: [
+    config.frontendUrl,          // http://localhost:3000 (web app)
+    'http://localhost:8081',     // Expo web / Metro bundler
+    'http://localhost:19006',    // Expo Go web fallback
+    'http://127.0.0.1:8081',
+    'http://127.0.0.1:19006',
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],

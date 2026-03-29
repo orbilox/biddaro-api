@@ -16,6 +16,7 @@ import depositRequestRoutes from './depositRequests.routes';
 import bankSettingsRoutes from './bankSettings.routes';
 import adminRoutes from './admin.routes';
 import premiumRoutes from './premium.routes';
+import addonsRoutes from './addons.routes';
 
 const router = Router();
 
@@ -42,6 +43,7 @@ router.get('/', (_req: Request, res: Response) => {
       '/api/v1/bank-settings',
       '/api/v1/admin',
       '/api/v1/premium',
+      '/api/v1/addons',
     ],
   });
 });
@@ -63,5 +65,6 @@ router.use('/deposit-requests', depositRequestRoutes);
 router.use('/bank-settings', bankSettingsRoutes);
 router.use('/admin', adminRoutes);
 router.use('/premium', premiumRoutes);
+router.use('/addons', addonsRoutes);
 
 export default router;
