@@ -222,6 +222,29 @@ export const ADDONS_CATALOG: AddOnDefinition[] = [
 
   // ── Project Management ────────────────────────────────────────────────────
   {
+    slug: 'project-manager',
+    name: 'Project Manager',
+    tagline: 'Full-featured project management OS for contractors',
+    description: 'A complete project management workspace — create projects, manage tasks on a Kanban board, track milestones, collaborate in discussions, manage files, and log time. Everything you need to run your contracting business, all in one place.',
+    category: 'Productivity',
+    icon: '🗂️',
+    price: 12.99,
+    pricingType: 'monthly',
+    targetRole: 'contractor',
+    features: [
+      'Kanban board: Todo, In Progress, In Review, Done',
+      'Tasks with priorities, due dates & sub-tasks',
+      'Milestones & sprint planning with roadmap',
+      'Threaded discussions per project',
+      'File & document management',
+      'Time tracking with per-task logging',
+      'Project overview dashboard with stats',
+      'Link projects to Biddaro contracts',
+    ],
+    isNew: true,
+    isPopular: true,
+  },
+  {
     slug: 'live-project-tracking',
     name: 'Live Project Tracking',
     tagline: 'Real-time progress dashboard for every contract',

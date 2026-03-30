@@ -58,6 +58,11 @@ model User {
   premiumSubscriptions   PremiumSubscription[]
   installedAddOns        UserAddOn[]
   projectUpdates         ProjectUpdate[]       @relation("projectUpdates")
+  pmProjects             PMProject[]           @relation("pmContractor")
+  pmDiscussions          PMDiscussion[]        @relation("pmDiscussionAuthor")
+  pmDiscussionReplies    PMDiscussionReply[]   @relation("pmReplyAuthor")
+  pmFiles                PMFile[]              @relation("pmFileUploader")
+  pmTimeEntries          PMTimeEntry[]         @relation("pmTimeUser")
 }
 
 model Job {
@@ -330,6 +335,116 @@ model ProjectUpdate {
   imageUrl        String?
   type            String    @default("update") // update | note | photo | milestone
   createdAt       DateTime  @default(now())
+}
+
+// ─── Project Manager Add-On ───────────────────────────────────────────────────
+
+model PMProject {
+  id           String    @id @default(cuid())
+  contractorId String
+  contractor   User      @relation("pmContractor", fields: [contractorId], references: [id], onDelete: Cascade)
+  contractId   String?   // optional link to a Biddaro contract
+  title        String
+  description  String?
+  status       String    @default("active")   // active | completed | archived
+  color        String    @default("#6366f1")  // hex color for sidebar
+  emoji        String    @default("📁")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tasks        PMTask[]
+  milestones   PMMilestone[]
+  discussions  PMDiscussion[]
+  files        PMFile[]
+  timeEntries  PMTimeEntry[]
+}
+
+model PMTask {
+  id          String       @id @default(cuid())
+  projectId   String
+  project     PMProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  milestoneId String?
+  milestone   PMMilestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  parentId    String?
+  parent      PMTask?      @relation("subtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subTasks    PMTask[]     @relation("subtasks")
+  title       String
+  description String?
+  status      String       @default("todo")    // todo | in_progress | in_review | done
+  priority    String       @default("medium")  // low | medium | high | urgent
+  dueDate     DateTime?
+  order       Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  timeEntries PMTimeEntry[]
+}
+
+model PMMilestone {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     PMProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  dueDate     DateTime?
+  status      String    @default("pending")   // pending | completed
+  color       String    @default("#6366f1")
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tasks       PMTask[]
+}
+
+model PMDiscussion {
+  id        String    @id @default(cuid())
+  projectId String
+  project   PMProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User      @relation("pmDiscussionAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  title     String
+  content   String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  replies   PMDiscussionReply[]
+}
+
+model PMDiscussionReply {
+  id           String       @id @default(cuid())
+  discussionId String
+  discussion   PMDiscussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  authorId     String
+  author       User         @relation("pmReplyAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  content      String
+  createdAt    DateTime     @default(now())
+}
+
+model PMFile {
+  id           String    @id @default(cuid())
+  projectId    String
+  project      PMProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploadedById String
+  uploadedBy   User      @relation("pmFileUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+  name         String
+  url          String
+  size         Int?
+  mimeType     String?
+  createdAt    DateTime  @default(now())
+}
+
+model PMTimeEntry {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     PMProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId      String?
+  task        PMTask?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  userId      String
+  user        User      @relation("pmTimeUser", fields: [userId], references: [id], onDelete: Cascade)
+  description String?
+  minutes     Int       // logged time in minutes
+  logDate     DateTime  @default(now())
+  createdAt   DateTime  @default(now())
 }
 
 // ─── Add-Ons Marketplace ─────────────────────────────────────────────────────
