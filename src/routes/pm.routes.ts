@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import {
   listProjects, createProject, updateProject, deleteProject, getProjectOverview,
+  contractSuggestions, importContract,
   listTasks, createTask, updateTask, deleteTask,
   listMilestones, createMilestone, updateMilestone, deleteMilestone,
   listDiscussions, createDiscussion, getDiscussion, replyToDiscussion, deleteDiscussion, deleteDiscussionReply,
@@ -12,11 +13,14 @@ import {
 const router = Router();
 
 // ── Projects ──────────────────────────────────────────────────────────────────
-router.get('/projects',              authenticate, listProjects);
-router.post('/projects',             authenticate, createProject);
-router.get('/projects/:id/overview', authenticate, getProjectOverview);
-router.put('/projects/:id',          authenticate, updateProject);
-router.delete('/projects/:id',       authenticate, deleteProject);
+router.get('/projects',                          authenticate, listProjects);
+router.post('/projects',                         authenticate, createProject);
+router.get('/projects/:id/overview',             authenticate, getProjectOverview);
+router.put('/projects/:id',                      authenticate, updateProject);
+router.delete('/projects/:id',                   authenticate, deleteProject);
+// ── Contract sync ─────────────────────────────────────────────────────────────
+router.get('/contract-suggestions',              authenticate, contractSuggestions);
+router.post('/import-contract/:contractId',      authenticate, importContract);
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 router.get('/projects/:id/tasks',    authenticate, listTasks);

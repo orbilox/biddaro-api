@@ -102,6 +102,74 @@ export async function deleteProject(req: AuthenticatedRequest, res: Response): P
   sendSuccess(res, null, 'Project deleted');
 }
 
+// ── Contract suggestions ── active contracts with no linked PM project yet ────
+
+export async function contractSuggestions(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const userId = req.user!.userId;
+  if (!(await requireAddon(userId, res))) return;
+
+  // Active contracts for this contractor
+  const contracts = await prisma.contract.findMany({
+    where: { contractorId: userId, status: { in: ['active', 'disputed'] } },
+    include: {
+      job: { select: { id: true, title: true, category: true, location: true, description: true } },
+      poster: { select: { id: true, firstName: true, lastName: true, profileImage: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  // PM projects that already link a contract
+  const linked = await prisma.pMProject.findMany({
+    where: { contractorId: userId, contractId: { not: null } },
+    select: { contractId: true },
+  });
+  const linkedIds = new Set(linked.map((p) => p.contractId));
+
+  const suggestions = contracts.filter((c) => !linkedIds.has(c.id));
+  sendSuccess(res, suggestions);
+}
+
+// ── Import contract ── auto-create a PM project from a contract ───────────────
+
+export async function importContract(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const userId = req.user!.userId;
+  const { contractId } = req.params;
+  if (!(await requireAddon(userId, res))) return;
+
+  const contract = await prisma.contract.findFirst({
+    where: { id: contractId, contractorId: userId },
+    include: { job: { select: { title: true, category: true, description: true } } },
+  });
+  if (!contract) { sendNotFound(res, 'Contract'); return; }
+
+  // Prevent duplicate import
+  const existing = await prisma.pMProject.findFirst({
+    where: { contractorId: userId, contractId },
+  });
+  if (existing) { sendError(res, 'A project for this contract already exists'); return; }
+
+  // Build a concise description from contract data
+  const description = [
+    `Category: ${contract.job.category}`,
+    `Contract value: ${contract.totalAmount} ${contract.currency}`,
+    contract.job.description ? contract.job.description.slice(0, 120) + (contract.job.description.length > 120 ? '…' : '') : null,
+  ].filter(Boolean).join(' · ');
+
+  const project = await prisma.pMProject.create({
+    data: {
+      contractorId: userId,
+      contractId,
+      title: contract.job.title,
+      description,
+      color: '#3b82f6',
+      emoji: '🏗️',
+      status: 'active',
+    },
+  });
+
+  res.status(201).json({ success: true, message: 'Project imported from contract', data: project });
+}
+
 export async function getProjectOverview(req: AuthenticatedRequest, res: Response): Promise<void> {
   const userId = req.user!.userId;
   const { id } = req.params;

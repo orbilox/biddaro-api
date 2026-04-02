@@ -8,7 +8,8 @@ export type AddOnCategory =
   | 'Finance'
   | 'Communication'
   | 'Trust & Safety'
-  | 'Marketing';
+  | 'Marketing'
+  | 'Planning';
 
 export type PricingType = 'free' | 'monthly' | 'one_time';
 
@@ -266,6 +267,31 @@ export const ADDONS_CATALOG: AddOnDefinition[] = [
     isPopular: true,
   },
 
+  // ── Planning ──────────────────────────────────────────────────────────────
+  {
+    slug: 'construction-planner',
+    name: 'Construction Planner',
+    tagline: 'Full visual planning suite for your build',
+    description: 'Plan every detail of your construction project — site mapping, interior/exterior design, plumbing, electrical, structural, and more. Upload images, build checklists, and earn achievement badges as you complete each phase. Generate a final Construction Blueprint report when you\'re done.',
+    category: 'Planning',
+    icon: '🏗️',
+    price: 9.99,
+    pricingType: 'monthly',
+    targetRole: 'job_poster',
+    features: [
+      'Planning sections: site map, exterior, interior, plumbing, electrical, structural, HVAC, finishes',
+      'Auto-populated trade checklists for each section',
+      'Image & blueprint upload board per section',
+      'Gamification: 8 achievement badges to earn',
+      'Progress tracking across all sections',
+      'Final Construction Blueprint report',
+      'Multiple build plans (residential, commercial, renovation)',
+      'Notes & annotations per section',
+    ],
+    isNew: true,
+    isPopular: true,
+  },
+
   // ── Marketing ─────────────────────────────────────────────────────────────
   {
     slug: 'featured-profile',
@@ -316,4 +342,5 @@ export const ADDON_CATEGORIES: AddOnCategory[] = [
   'Communication',
   'Trust & Safety',
   'Marketing',
+  'Planning',
 ];

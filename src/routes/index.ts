@@ -19,6 +19,7 @@ import premiumRoutes from './premium.routes';
 import addonsRoutes from './addons.routes';
 import projectTrackingRoutes from './projectTracking.routes';
 import pmRoutes from './pm.routes';
+import buildPlannerRoutes from './buildPlanner.routes';
 
 const router = Router();
 
@@ -72,5 +73,6 @@ router.use('/premium', premiumRoutes);
 router.use('/addons', addonsRoutes);
 router.use('/project-tracking', projectTrackingRoutes);
 router.use('/pm', pmRoutes);
+router.use('/build-planner', buildPlannerRoutes);
 
 export default router;

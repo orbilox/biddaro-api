@@ -63,6 +63,8 @@ model User {
   pmDiscussionReplies    PMDiscussionReply[]   @relation("pmReplyAuthor")
   pmFiles                PMFile[]              @relation("pmFileUploader")
   pmTimeEntries          PMTimeEntry[]         @relation("pmTimeUser")
+  buildPlans             BuildPlan[]           @relation("buildPlanPoster")
+  buildMedia             BuildMedia[]          @relation("buildMediaUploader")
 }
 
 model Job {
@@ -459,4 +461,67 @@ model UserAddOn {
   settings    String?   // JSON: per-add-on configuration
 
   @@unique([userId, addOnSlug])
+}
+
+// ─── Construction Planner Add-On ──────────────────────────────────────────────
+
+model BuildPlan {
+  id          String   @id @default(cuid())
+  posterId    String
+  poster      User     @relation("buildPlanPoster", fields: [posterId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  buildType   String   @default("residential")  // residential|commercial|industrial|renovation|interior
+  address     String?
+  totalBudget Float?
+  currency    String   @default("USD")
+  emoji       String   @default("🏗️")
+  color       String   @default("#3b82f6")
+  coverImage  String?
+  status      String   @default("planning")  // planning|in_progress|complete
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sections BuildSection[]
+  media    BuildMedia[]
+}
+
+model BuildSection {
+  id        String   @id @default(cuid())
+  planId    String
+  plan      BuildPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  type      String   // site_map|exterior|interior|plumbing|electrical|structural|hvac|finishes|other
+  title     String
+  notes     String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  checkItems BuildCheckItem[]
+  media      BuildMedia[]
+}
+
+model BuildCheckItem {
+  id        String       @id @default(cuid())
+  sectionId String
+  section   BuildSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  label     String
+  isChecked Boolean      @default(false)
+  order     Int          @default(0)
+  createdAt DateTime     @default(now())
+}
+
+model BuildMedia {
+  id        String        @id @default(cuid())
+  planId    String
+  plan      BuildPlan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  sectionId String?
+  section   BuildSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  addedById String
+  addedBy   User          @relation("buildMediaUploader", fields: [addedById], references: [id])
+  name      String
+  url       String
+  mediaType String        @default("image")  // image|blueprint|map|document
+  caption   String?
+  addedAt   DateTime      @default(now())
 }
