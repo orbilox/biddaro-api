@@ -111,6 +111,15 @@ const ACHIEVEMENT_DEFS: AchievementDef[] = [
   { slug: 'construction_ready',emoji: '🎊', title: 'Construction Ready!',    description: 'Completed 100% of your entire plan' },
 ];
 
+// ─── Async wrapper ────────────────────────────────────────────────────────────
+
+import { NextFunction } from 'express';
+type Handler = (req: AuthenticatedRequest, res: Response) => Promise<void>;
+function wrap(fn: Handler) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) =>
+    fn(req, res).catch(next);
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function requireAddon(userId: string, res: Response): Promise<boolean> {
@@ -255,7 +264,7 @@ export async function getPlan(req: AuthenticatedRequest, res: Response): Promise
   const stats = computeStats(plan);
   const achievements = computeAchievements(stats);
 
-  sendSuccess(res, { plan, stats, achievements });
+  sendSuccess(res, { ...plan, stats, achievements });
 }
 
 export async function updatePlan(req: AuthenticatedRequest, res: Response): Promise<void> {
