@@ -5,6 +5,7 @@ import {
   addSection, updateSection, deleteSection,
   toggleCheckItem, addCheckItem, deleteCheckItem,
   listMedia, addMedia, deleteMedia,
+  listMaterials, addMaterial, updateMaterial, deleteMaterial,
   getAchievements,
 } from '../controllers/buildPlanner.controller';
 
@@ -31,6 +32,12 @@ router.delete('/items/:itemId',                   authenticate, deleteCheckItem)
 router.get('/plans/:planId/media',                authenticate, listMedia);
 router.post('/plans/:planId/media',               authenticate, addMedia);
 router.delete('/media/:mediaId',                  authenticate, deleteMedia);
+
+// ── Materials ─────────────────────────────────────────────────────────────────
+router.get('/plans/:planId/materials',            authenticate, listMaterials);
+router.post('/plans/:planId/materials',           authenticate, addMaterial);
+router.put('/materials/:materialId',              authenticate, updateMaterial);
+router.delete('/materials/:materialId',           authenticate, deleteMaterial);
 
 // ── Achievements ──────────────────────────────────────────────────────────────
 router.get('/plans/:planId/achievements',         authenticate, getAchievements);

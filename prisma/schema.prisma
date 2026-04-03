@@ -482,8 +482,27 @@ model BuildPlan {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  sections BuildSection[]
-  media    BuildMedia[]
+  sections  BuildSection[]
+  media     BuildMedia[]
+  materials BuildPlanMaterial[]
+}
+
+model BuildPlanMaterial {
+  id            String    @id @default(cuid())
+  planId        String
+  plan          BuildPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  name          String
+  category      String    @default("other")   // concrete|steel|wood|electrical|plumbing|roofing|finishing|other
+  quantity      Float
+  unit          String    @default("pcs")     // pcs|bags|m2|m3|kg|tons|L|m|rolls|sheets
+  estimatedCost Float?
+  actualCost    Float?
+  status        String    @default("pending") // pending|ordered|delivered|installed
+  supplier      String?
+  notes         String?
+  order         Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 model BuildSection {

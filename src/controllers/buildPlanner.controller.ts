@@ -508,6 +508,95 @@ export async function deleteMedia(req: AuthenticatedRequest, res: Response): Pro
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// MATERIALS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listMaterials(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const userId = req.user!.userId;
+  const { planId } = req.params;
+  if (!(await requireAddon(userId, res))) return;
+  if (!(await ownPlan(planId, userId))) { sendForbidden(res); return; }
+
+  const materials = await prisma.buildPlanMaterial.findMany({
+    where: { planId },
+    orderBy: [{ category: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
+  });
+  sendSuccess(res, materials);
+}
+
+export async function addMaterial(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const userId = req.user!.userId;
+  const { planId } = req.params;
+  if (!(await requireAddon(userId, res))) return;
+  if (!(await ownPlan(planId, userId))) { sendForbidden(res); return; }
+
+  const { name, category, quantity, unit, estimatedCost, actualCost, status, supplier, notes } = req.body;
+  if (!name?.trim() || quantity == null) {
+    sendError(res, 'name and quantity are required', 400); return;
+  }
+
+  const material = await prisma.buildPlanMaterial.create({
+    data: {
+      planId,
+      name: name.trim(),
+      category: category || 'other',
+      quantity: parseFloat(quantity),
+      unit: unit || 'pcs',
+      estimatedCost: estimatedCost != null ? parseFloat(estimatedCost) : null,
+      actualCost: actualCost != null ? parseFloat(actualCost) : null,
+      status: status || 'pending',
+      supplier: supplier?.trim() || null,
+      notes: notes?.trim() || null,
+    },
+  });
+  res.status(201).json({ success: true, message: 'Material added', data: material });
+}
+
+export async function updateMaterial(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const userId = req.user!.userId;
+  const { materialId } = req.params;
+  if (!(await requireAddon(userId, res))) return;
+
+  const material = await prisma.buildPlanMaterial.findUnique({
+    where: { id: materialId },
+    include: { plan: { select: { posterId: true } } },
+  });
+  if (!material || material.plan.posterId !== userId) { sendForbidden(res); return; }
+
+  const { name, category, quantity, unit, estimatedCost, actualCost, status, supplier, notes } = req.body;
+  const updated = await prisma.buildPlanMaterial.update({
+    where: { id: materialId },
+    data: {
+      ...(name != null && { name: name.trim() }),
+      ...(category != null && { category }),
+      ...(quantity != null && { quantity: parseFloat(quantity) }),
+      ...(unit != null && { unit }),
+      ...(estimatedCost !== undefined && { estimatedCost: estimatedCost != null ? parseFloat(estimatedCost) : null }),
+      ...(actualCost !== undefined && { actualCost: actualCost != null ? parseFloat(actualCost) : null }),
+      ...(status != null && { status }),
+      ...(supplier !== undefined && { supplier: supplier?.trim() || null }),
+      ...(notes !== undefined && { notes: notes?.trim() || null }),
+    },
+  });
+  sendSuccess(res, updated, 'Material updated');
+}
+
+export async function deleteMaterial(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const userId = req.user!.userId;
+  const { materialId } = req.params;
+  if (!(await requireAddon(userId, res))) return;
+
+  const material = await prisma.buildPlanMaterial.findUnique({
+    where: { id: materialId },
+    include: { plan: { select: { posterId: true } } },
+  });
+  if (!material || material.plan.posterId !== userId) { sendForbidden(res); return; }
+
+  await prisma.buildPlanMaterial.delete({ where: { id: materialId } });
+  sendSuccess(res, null, 'Material deleted');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ACHIEVEMENTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
