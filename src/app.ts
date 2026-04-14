@@ -14,13 +14,23 @@ const app = express();
 // ─── Security ─────────────────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-  origin: [
-    config.frontendUrl,          // http://localhost:3000 (web app)
-    'http://localhost:8081',     // Expo web / Metro bundler
-    'http://localhost:19006',    // Expo Go web fallback
-    'http://127.0.0.1:8081',
-    'http://127.0.0.1:19006',
-  ],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    const allowed = [
+      config.frontendUrl,
+      'http://localhost:3000',
+      'http://localhost:8081',
+      'http://localhost:19006',
+      'http://127.0.0.1:8081',
+      'http://127.0.0.1:19006',
+    ];
+    // Allow any Vercel preview deployment
+    if (allowed.includes(origin) || origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
