@@ -75,4 +75,18 @@ router.use('/project-tracking', projectTrackingRoutes);
 router.use('/pm', pmRoutes);
 router.use('/build-planner', buildPlannerRoutes);
 
+// ─── One-time admin promotion (secured by secret key) ─────────────────────────
+import { prisma } from '../config/database';
+router.post('/setup/make-admin', async (req: Request, res: Response) => {
+  const { email, secret } = req.body;
+  if (secret !== process.env.SETUP_SECRET) {
+    return res.status(403).json({ success: false, message: 'Forbidden' });
+  }
+  const user = await prisma.user.update({
+    where: { email },
+    data: { role: 'admin', isVerified: true },
+  });
+  return res.json({ success: true, message: `${user.email} is now admin` });
+});
+
 export default router;
