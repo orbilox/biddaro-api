@@ -77,6 +77,7 @@ router.use('/build-planner', buildPlannerRoutes);
 
 // ─── One-time admin promotion ────────────────────────────────────────────────
 import { prisma } from '../config/database';
+import bcrypt from 'bcryptjs';
 router.post('/setup/make-admin', async (req: Request, res: Response) => {
   const { email, secret } = req.body;
   const validSecret = process.env.SETUP_SECRET || 'biddaro_setup_2024';
@@ -88,6 +89,20 @@ router.post('/setup/make-admin', async (req: Request, res: Response) => {
     data: { role: 'admin', isVerified: true },
   });
   return res.json({ success: true, message: `${user.email} is now admin` });
+});
+
+router.post('/setup/reset-admin-password', async (req: Request, res: Response) => {
+  const { email, newPassword, secret } = req.body;
+  const validSecret = process.env.SETUP_SECRET || 'biddaro_setup_2024';
+  if (secret !== validSecret) {
+    return res.status(403).json({ success: false, message: 'Forbidden' });
+  }
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  const user = await prisma.user.update({
+    where: { email },
+    data: { passwordHash },
+  });
+  return res.json({ success: true, message: `Password reset for ${user.email}` });
 });
 
 export default router;
