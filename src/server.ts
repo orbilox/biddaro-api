@@ -80,7 +80,7 @@ io.on('connection', (socket) => {
 async function start() {
   await connectDB();
 
-  httpServer.listen(config.port, () => {
+  httpServer.listen(config.port, '0.0.0.0', () => {
     console.log(`\n🚀 Biddaro API running on port ${config.port}`);
     console.log(`   ENV:      ${config.nodeEnv}`);
     console.log(`   DB:       SQLite (dev.db)`);
