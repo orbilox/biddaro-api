@@ -65,6 +65,7 @@ model User {
   pmTimeEntries          PMTimeEntry[]         @relation("pmTimeUser")
   buildPlans             BuildPlan[]           @relation("buildPlanPoster")
   buildMedia             BuildMedia[]          @relation("buildMediaUploader")
+  loanApplications       LoanApplication[]
 }
 
 model Job {
@@ -518,6 +519,35 @@ model BuildSection {
 
   checkItems BuildCheckItem[]
   media      BuildMedia[]
+}
+
+model LoanApplication {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loanType         String   // home_construction | renovation | equipment | working_capital | personal
+  amount           Float
+  tenure           Int      // months
+  purpose          String
+  employmentType   String   // salaried | self_employed | business_owner | contractor
+  monthlyIncome    Float
+  firstName        String
+  lastName         String
+  email            String
+  phone            String
+  address          String
+  city             String
+  country          String
+  documents        String?  // JSON array of URLs
+  status           String   @default("pending") // pending | under_review | approved | rejected | disbursed
+  adminNote        String?
+  approvedAmount   Float?
+  interestRate     Float?
+  emiAmount        Float?
+  reviewedAt       DateTime?
+  disbursedAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model BuildCheckItem {

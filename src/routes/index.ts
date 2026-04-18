@@ -20,6 +20,7 @@ import addonsRoutes from './addons.routes';
 import projectTrackingRoutes from './projectTracking.routes';
 import pmRoutes from './pm.routes';
 import buildPlannerRoutes from './buildPlanner.routes';
+import loansRoutes from './loans.routes';
 
 const router = Router();
 
@@ -74,6 +75,7 @@ router.use('/addons', addonsRoutes);
 router.use('/project-tracking', projectTrackingRoutes);
 router.use('/pm', pmRoutes);
 router.use('/build-planner', buildPlannerRoutes);
+router.use('/loans', loansRoutes);
 
 // ─── One-time admin promotion ────────────────────────────────────────────────
 import { prisma } from '../config/database';
