@@ -15,17 +15,24 @@ const app = express();
 app.use(helmet());
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, etc.)
+    // Allow requests with no origin (mobile apps, curl, Postman, etc.)
     if (!origin) return callback(null, true);
     const allowed = [
+      // Production domains
+      'https://www.biddaro.com',
+      'https://biddaro.com',
+      // Vercel project URL
+      'https://biddaro-web.vercel.app',
+      // Dynamic FRONTEND_URL env var (Railway / staging)
       config.frontendUrl,
+      // Local development
       'http://localhost:3000',
       'http://localhost:8081',
       'http://localhost:19006',
       'http://127.0.0.1:8081',
       'http://127.0.0.1:19006',
     ];
-    // Allow any Vercel preview deployment
+    // Allow any Vercel preview deployment (biddaro-*.vercel.app)
     if (allowed.includes(origin) || origin.endsWith('.vercel.app')) {
       return callback(null, true);
     }
