@@ -1,31 +1,28 @@
-import nodemailer from 'nodemailer';
-
-// Brevo (formerly Sendinblue) SMTP relay
-const transporter = nodemailer.createTransport({
-  host: 'smtp-relay.brevo.com',
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.BREVO_SMTP_USER, // your Brevo login email
-    pass: process.env.BREVO_SMTP_KEY,  // Brevo SMTP key (not your password)
-  },
-  connectionTimeout: 8000,
-  greetingTimeout: 5000,
-  socketTimeout: 10000,
-});
+// Brevo Transactional Email API (HTTPS port 443 — works on Railway, no SMTP port blocking)
+// Docs: https://developers.brevo.com/reference/sendtransacemail
 
 export async function sendOtpEmail(
   email: string,
   otp: string,
   firstName: string,
 ): Promise<void> {
-  const from = process.env.FROM_EMAIL || process.env.BREVO_SMTP_USER || 'noreply@biddaro.com';
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) throw new Error('BREVO_API_KEY env var is not set');
 
-  await transporter.sendMail({
-    from: `"Biddaro" <${from}>`,
-    to: email,
-    subject: `${otp} is your Biddaro verification code`,
-    html: `
+  const senderEmail = process.env.FROM_EMAIL || 'noreply@biddaro.com';
+
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': apiKey,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: 'Biddaro', email: senderEmail },
+      to: [{ email, name: firstName }],
+      subject: `${otp} is your Biddaro verification code`,
+      htmlContent: `
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8" /></head>
@@ -78,5 +75,11 @@ export async function sendOtpEmail(
   </table>
 </body>
 </html>`,
+    }),
   });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Brevo API ${response.status}: ${body}`);
+  }
 }
