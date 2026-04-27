@@ -78,12 +78,14 @@ io.on('connection', (socket) => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 async function start() {
+  console.log(`[startup] NODE_ENV=${config.nodeEnv} PORT=${config.port}`);
+  console.log(`[startup] DATABASE_URL set: ${!!process.env.DATABASE_URL}`);
+
   await connectDB();
 
   httpServer.listen(config.port, '0.0.0.0', () => {
     console.log(`\n🚀 Biddaro API running on port ${config.port}`);
     console.log(`   ENV:      ${config.nodeEnv}`);
-    console.log(`   DB:       SQLite (dev.db)`);
     console.log(`   API:      http://localhost:${config.port}/api/v1`);
     console.log(`   Health:   http://localhost:${config.port}/health\n`);
   });
