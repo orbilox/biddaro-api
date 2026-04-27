@@ -131,14 +131,9 @@ export async function sendOtp(req: Request, res: Response): Promise<void> {
   try {
     await createAndSendOtp(email, user.firstName);
     sendSuccess(res, null, 'Verification code sent. Please check your inbox.');
-  } catch (err: any) {
-    const isPrismaError = err?.code?.startsWith('P') || err?.name?.includes('Prisma');
-    const isTimeout = err?.message?.includes('Timed out');
-    const smtpCode = err?.code || err?.responseCode || 'unknown';
-    const shortMsg = String(err?.message || '').slice(0, 120);
-    console.error('[OTP] Resend failed — code:', err?.code, '| name:', err?.name, '| msg:', err?.message);
-    const hint = isPrismaError ? '[DB]' : isTimeout ? '[TIMEOUT]' : `[SMTP:${smtpCode}]`;
-    sendError(res, `${hint} ${shortMsg}`, 500);
+  } catch (err) {
+    console.error('[OTP] Resend failed:', err);
+    sendError(res, 'Failed to send verification email. Please try again.', 500);
   }
 }
 
