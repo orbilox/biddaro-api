@@ -1,0 +1,11 @@
+# Force devDependencies to install during build so tsc and other build tools are available.
+# Railway sets NODE_ENV=production which causes npm to skip devDeps by default.
+
+[phases.install]
+cmds = ["npm install --include=dev"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npx prisma db push --accept-data-loss && node dist/server.js"
