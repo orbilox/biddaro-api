@@ -1,16 +1,28 @@
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Brevo (formerly Sendinblue) SMTP relay
+const transporter = nodemailer.createTransport({
+  host: 'smtp-relay.brevo.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.BREVO_SMTP_USER, // your Brevo login email
+    pass: process.env.BREVO_SMTP_KEY,  // Brevo SMTP key (not your password)
+  },
+  connectionTimeout: 8000,
+  greetingTimeout: 5000,
+  socketTimeout: 10000,
+});
 
 export async function sendOtpEmail(
   email: string,
   otp: string,
   firstName: string,
 ): Promise<void> {
-  const from = process.env.FROM_EMAIL || 'noreply@biddaro.com';
+  const from = process.env.FROM_EMAIL || process.env.BREVO_SMTP_USER || 'noreply@biddaro.com';
 
-  const { error } = await resend.emails.send({
-    from: `Biddaro <${from}>`,
+  await transporter.sendMail({
+    from: `"Biddaro" <${from}>`,
     to: email,
     subject: `${otp} is your Biddaro verification code`,
     html: `
@@ -67,8 +79,4 @@ export async function sendOtpEmail(
 </body>
 </html>`,
   });
-
-  if (error) {
-    throw new Error(`Resend error: ${error.message}`);
-  }
 }
