@@ -134,9 +134,9 @@ export async function sendOtp(req: Request, res: Response): Promise<void> {
   } catch (err: any) {
     const isPrismaError = err?.code?.startsWith('P') || err?.name?.includes('Prisma');
     const isTimeout = err?.message?.includes('Timed out');
+    const smtpCode = err?.code || err?.responseCode || 'unknown';
     console.error('[OTP] Resend failed — code:', err?.code, '| name:', err?.name, '| msg:', err?.message);
-    // Temporarily surface error type in message to diagnose Railway deployment
-    const hint = isPrismaError ? '[DB]' : isTimeout ? '[TIMEOUT]' : '[SMTP]';
+    const hint = isPrismaError ? '[DB]' : isTimeout ? '[TIMEOUT]' : `[SMTP:${smtpCode}]`;
     sendError(res, `Failed to send verification email ${hint}. Please try again.`, 500);
   }
 }
