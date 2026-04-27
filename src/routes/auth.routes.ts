@@ -4,6 +4,7 @@ import { validate } from '../middleware/validate';
 import { authenticate } from '../middleware/auth';
 import {
   register, login, refreshToken, logout, getMe, changePassword,
+  sendOtp, verifyOtp,
 } from '../controllers/auth.controller';
 
 const router = Router();
@@ -25,6 +26,15 @@ router.post('/login', validate([
 router.post('/refresh', validate([
   body('refreshToken').notEmpty().withMessage('Refresh token is required'),
 ]), refreshToken);
+
+router.post('/send-otp', validate([
+  body('email').isEmail().normalizeEmail(),
+]), sendOtp);
+
+router.post('/verify-otp', validate([
+  body('email').isEmail().normalizeEmail(),
+  body('code').isLength({ min: 6, max: 6 }).isNumeric().withMessage('Code must be 6 digits'),
+]), verifyOtp);
 
 router.post('/logout', authenticate, logout);
 router.get('/me', authenticate, getMe);

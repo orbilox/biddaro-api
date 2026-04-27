@@ -574,3 +574,16 @@ model BuildMedia {
   caption   String?
   addedAt   DateTime      @default(now())
 }
+
+// ─── OTP Verification ─────────────────────────────────────────────────────────
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  email     String
+  code      String   // 6-digit numeric, short-lived — not sensitive to store plain
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
