@@ -14,6 +14,16 @@ function safeUser(user: Record<string, unknown>) {
   return safe;
 }
 
+/** Rejects after ms milliseconds — used to cap email-send time. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 /** Delete all existing OTPs for an email and create a fresh one (10-min expiry). */
 async function createAndSendOtp(email: string, firstName: string): Promise<void> {
   await prisma.otpCode.deleteMany({ where: { email } });
@@ -22,7 +32,8 @@ async function createAndSendOtp(email: string, firstName: string): Promise<void>
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
   await prisma.otpCode.create({ data: { email, code, expiresAt } });
-  await sendOtpEmail(email, code, firstName);
+  // Hard 10s cap — if SMTP hangs, we still respond quickly and the user can resend
+  await withTimeout(sendOtpEmail(email, code, firstName), 10_000);
 }
 
 // ─── Register ─────────────────────────────────────────────────────────────────

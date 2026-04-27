@@ -8,6 +8,10 @@ const transporter = nodemailer.createTransport({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  // Fail fast if SMTP creds are missing / wrong — don't hang the request
+  connectionTimeout: 5000,  // 5s to connect
+  greetingTimeout: 5000,    // 5s for SMTP greeting
+  socketTimeout: 8000,      // 8s per socket operation
 });
 
 export async function sendOtpEmail(
