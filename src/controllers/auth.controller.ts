@@ -1,10 +1,11 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import { prisma } from '../config/database';
 import { hashPassword, comparePassword } from '../utils/password';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { sendSuccess, sendCreated, sendError, sendUnauthorized } from '../utils/response';
 import { generateOtp } from '../utils/otp';
-import { sendOtpEmail } from '../utils/email';
+import { sendOtpEmail, sendPasswordResetEmail } from '../utils/email';
 import type { AuthenticatedRequest } from '../types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -237,4 +238,70 @@ export async function changePassword(req: AuthenticatedRequest, res: Response): 
   const passwordHash = await hashPassword(newPassword);
   await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
   sendSuccess(res, null, 'Password changed successfully');
+}
+
+// ─── Forgot password ──────────────────────────────────────────────────────────
+
+export async function forgotPassword(req: Request, res: Response): Promise<void> {
+  const { email } = req.body;
+
+  // Always respond with success to prevent email enumeration
+  const genericMsg = 'If an account with that email exists, a reset link has been sent.';
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user || !user.isVerified) {
+    sendSuccess(res, null, genericMsg);
+    return;
+  }
+
+  // Delete any existing tokens for this email
+  await prisma.passwordResetToken.deleteMany({ where: { email } });
+
+  // Generate a secure random token
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+  await prisma.passwordResetToken.create({ data: { email, token, expiresAt } });
+
+  const frontendUrl = process.env.FRONTEND_URL || 'https://biddaro.com';
+  const resetLink = `${frontendUrl}/reset-password?token=${token}`;
+
+  try {
+    await withTimeout(sendPasswordResetEmail(email, user.firstName, resetLink), 10_000);
+  } catch (err) {
+    console.error('[PASSWORD_RESET] Failed to send email:', err);
+  }
+
+  sendSuccess(res, null, genericMsg);
+}
+
+// ─── Reset password ───────────────────────────────────────────────────────────
+
+export async function resetPassword(req: Request, res: Response): Promise<void> {
+  const { token, newPassword } = req.body;
+
+  const resetToken = await prisma.passwordResetToken.findFirst({
+    where: {
+      token,
+      used: false,
+      expiresAt: { gt: new Date() },
+    },
+  });
+
+  if (!resetToken) {
+    sendError(res, 'Invalid or expired reset link. Please request a new one.', 400);
+    return;
+  }
+
+  // Mark token as used
+  await prisma.passwordResetToken.update({ where: { id: resetToken.id }, data: { used: true } });
+
+  // Update password and invalidate all sessions
+  const passwordHash = await hashPassword(newPassword);
+  await prisma.user.update({
+    where: { email: resetToken.email },
+    data: { passwordHash, refreshToken: null },
+  });
+
+  sendSuccess(res, null, 'Password reset successfully. Please log in with your new password.');
 }

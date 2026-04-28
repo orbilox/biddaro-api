@@ -4,7 +4,7 @@ import { validate } from '../middleware/validate';
 import { authenticate } from '../middleware/auth';
 import {
   register, login, refreshToken, logout, getMe, changePassword,
-  sendOtp, verifyOtp,
+  sendOtp, verifyOtp, forgotPassword, resetPassword,
 } from '../controllers/auth.controller';
 
 const router = Router();
@@ -35,6 +35,15 @@ router.post('/verify-otp', validate([
   body('email').isEmail().normalizeEmail(),
   body('code').isLength({ min: 6, max: 6 }).isNumeric().withMessage('Code must be 6 digits'),
 ]), verifyOtp);
+
+router.post('/forgot-password', validate([
+  body('email').isEmail().normalizeEmail(),
+]), forgotPassword);
+
+router.post('/reset-password', validate([
+  body('token').notEmpty().withMessage('Reset token is required'),
+  body('newPassword').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+]), resetPassword);
 
 router.post('/logout', authenticate, logout);
 router.get('/me', authenticate, getMe);

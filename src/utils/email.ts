@@ -83,3 +83,87 @@ export async function sendOtpEmail(
     throw new Error(`Brevo API ${response.status}: ${body}`);
   }
 }
+
+// ─── Password Reset Email ──────────────────────────────────────────────────────
+
+export async function sendPasswordResetEmail(
+  email: string,
+  firstName: string,
+  resetLink: string,
+): Promise<void> {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) throw new Error('BREVO_API_KEY env var is not set');
+
+  const senderEmail = process.env.FROM_EMAIL || 'noreply@biddaro.com';
+
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': apiKey,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: 'Biddaro', email: senderEmail },
+      to: [{ email, name: firstName }],
+      subject: 'Reset your Biddaro password',
+      htmlContent: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8" /></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="480" cellpadding="0" cellspacing="0"
+          style="background:#ffffff;border-radius:16px;border:1px solid #e5e7eb;overflow:hidden;">
+          <tr>
+            <td style="background:#ea580c;padding:24px 32px;">
+              <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">
+                Biddaro
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px;">
+              <h2 style="margin:0 0 8px;font-size:20px;color:#111827;">Reset your password</h2>
+              <p style="margin:0 0 24px;color:#6b7280;font-size:15px;">
+                Hi ${firstName}, we received a request to reset your Biddaro password.
+                Click the button below to choose a new one.
+              </p>
+              <div style="text-align:center;margin-bottom:24px;">
+                <a href="${resetLink}"
+                   style="display:inline-block;background:#ea580c;color:#ffffff;font-size:15px;
+                          font-weight:700;padding:14px 32px;border-radius:10px;text-decoration:none;">
+                  Reset Password
+                </a>
+              </div>
+              <p style="margin:0 0 8px;color:#6b7280;font-size:13px;">
+                This link expires in <strong>1 hour</strong>. If you didn't request a reset, you can safely ignore this email.
+              </p>
+              <p style="margin:0;color:#9ca3af;font-size:12px;word-break:break-all;">
+                Or copy this link: ${resetLink}
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 32px;border-top:1px solid #f3f4f6;background:#f9fafb;">
+              <p style="margin:0;font-size:12px;color:#9ca3af;">
+                Never share this link with anyone. Biddaro staff will never ask for it.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Brevo API ${response.status}: ${body}`);
+  }
+}
