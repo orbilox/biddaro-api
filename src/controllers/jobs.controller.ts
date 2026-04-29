@@ -153,6 +153,70 @@ export async function getMyJobs(req: AuthenticatedRequest, res: Response): Promi
   sendSuccess(res, buildPaginatedResult(jobs.map(parseJobJson), total, { page, limit, skip }));
 }
 
+// ─── Recommended jobs for a contractor ───────────────────────────────────────
+
+export async function getRecommendedJobs(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const userId = req.user!.userId;
+
+  // Fetch contractor's skills
+  const userRecord = await prisma.user.findUnique({ where: { id: userId }, select: { skills: true } });
+  const rawSkills = tryParse(userRecord?.skills as string | null);
+  const skills: string[] = Array.isArray(rawSkills) ? (rawSkills as string[]) : [];
+
+  // IDs already bid on (exclude those)
+  const existingBids = await prisma.bid.findMany({
+    where: { contractorId: userId, status: { not: 'withdrawn' } },
+    select: { jobId: true },
+  });
+  const bidJobIds = existingBids.map(b => b.jobId);
+
+  const baseWhere: Record<string, unknown> = {
+    status: 'open',
+    posterId: { not: userId },
+    ...(bidJobIds.length > 0 && { id: { notIn: bidJobIds } }),
+  };
+
+  let recommended: Awaited<ReturnType<typeof prisma.job.findMany>> = [];
+
+  if (skills.length > 0) {
+    // Match by category name OR title/description keyword overlap with skills
+    recommended = await prisma.job.findMany({
+      where: {
+        ...baseWhere,
+        OR: [
+          { category: { in: skills } },
+          ...skills.map(s => ({ title: { contains: s } })),
+          ...skills.map(s => ({ description: { contains: s } })),
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      include: JOB_INCLUDE,
+    });
+  }
+
+  // Backfill with recent open jobs if fewer than 5 skill-matched results
+  if (recommended.length < 5) {
+    const excludeIds = [...bidJobIds, ...recommended.map(j => j.id)];
+    const backfill = await prisma.job.findMany({
+      where: {
+        ...baseWhere,
+        ...(excludeIds.length > 0 && { id: { notIn: excludeIds } }),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10 - recommended.length,
+      include: JOB_INCLUDE,
+    });
+    recommended = [...recommended, ...backfill];
+  }
+
+  sendSuccess(res, {
+    jobs: recommended.map(parseJobJson),
+    hasSkills: skills.length > 0,
+    skillsUsed: skills,
+  });
+}
+
 // ─── Get AI cost estimation for a job ────────────────────────────────────────
 
 export async function estimateJobCost(req: AuthenticatedRequest, res: Response): Promise<void> {

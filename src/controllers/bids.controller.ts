@@ -241,6 +241,60 @@ export async function declineBid(req: AuthenticatedRequest, res: Response): Prom
   sendSuccess(res, null, 'Bid declined');
 }
 
+// ─── Bid insights for a job poster ───────────────────────────────────────────
+
+export async function getBidInsights(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { jobId } = req.params;
+
+  const job = await prisma.job.findUnique({ where: { id: jobId }, select: { id: true, posterId: true, budget: true, createdAt: true } });
+  if (!job) { sendNotFound(res, 'Job'); return; }
+  if (job.posterId !== req.user!.userId) { sendForbidden(res); return; }
+
+  const bids = await prisma.bid.findMany({
+    where: { jobId, status: { not: 'withdrawn' } },
+    select: { amount: true, createdAt: true, isPriority: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  if (bids.length === 0) {
+    sendSuccess(res, {
+      totalBids: 0,
+      avgAmount: null,
+      minAmount: null,
+      maxAmount: null,
+      fastestResponseMins: null,
+      budgetVsAvg: null,
+      priorityBids: 0,
+    });
+    return;
+  }
+
+  const amounts = bids.map(b => Number(b.amount));
+  const avgAmount = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+  const minAmount = Math.min(...amounts);
+  const maxAmount = Math.max(...amounts);
+
+  // Minutes from job post to first bid
+  const fastestResponseMins = Math.round(
+    (bids[0].createdAt.getTime() - job.createdAt.getTime()) / 60_000,
+  );
+
+  // Positive = budget exceeds avg bid (contractor-friendly); negative = under budget
+  const budgetVsAvg = job.budget
+    ? Math.round(((Number(job.budget) - avgAmount) / avgAmount) * 1000) / 10
+    : null;
+
+  sendSuccess(res, {
+    totalBids: bids.length,
+    avgAmount: Math.round(avgAmount * 100) / 100,
+    minAmount,
+    maxAmount,
+    fastestResponseMins,
+    budgetVsAvg,
+    priorityBids: bids.filter(b => b.isPriority).length,
+  });
+}
+
 // ─── Withdraw a bid ───────────────────────────────────────────────────────────
 
 export async function withdrawBid(req: AuthenticatedRequest, res: Response): Promise<void> {

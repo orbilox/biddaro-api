@@ -4,15 +4,17 @@ import { validate } from '../middleware/validate';
 import { authenticate, requireRole, optionalAuth } from '../middleware/auth';
 import {
   listJobs, getJob, createJob, updateJob, deleteJob, getMyJobs, estimateJobCost,
+  getRecommendedJobs,
 } from '../controllers/jobs.controller';
 import {
-  createBid, getJobBids,
+  createBid, getJobBids, getBidInsights,
 } from '../controllers/bids.controller';
 
 const router = Router();
 
 router.get('/', optionalAuth, listJobs);
 router.get('/my', authenticate, getMyJobs);
+router.get('/recommended', authenticate, requireRole('contractor'), getRecommendedJobs);
 
 router.post('/', authenticate, requireRole('job_poster'), validate([
   body('title').trim().isLength({ min: 5, max: 200 }).withMessage('Title must be 5-200 characters'),
@@ -30,6 +32,7 @@ router.delete('/:id', authenticate, requireRole('job_poster'), deleteJob);
 
 // Bids sub-resource
 router.get('/:jobId/bids', authenticate, getJobBids);
+router.get('/:jobId/bid-insights', authenticate, getBidInsights);
 router.post('/:jobId/bids', authenticate, requireRole('contractor'), validate([
   body('amount').isFloat({ min: 1 }).withMessage('Bid amount must be at least $1'),
   body('proposal').trim().isLength({ min: 20 }).withMessage('Proposal must be at least 20 characters'),
