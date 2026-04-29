@@ -37,10 +37,22 @@ async function createAndSendOtp(email: string, firstName: string): Promise<void>
   await withTimeout(sendOtpEmail(email, code, firstName), 10_000);
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Generate a unique 8-char alphanumeric referral code with retry loop. */
+async function generateUniqueReferralCode(): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+    const existing = await prisma.user.findUnique({ where: { referralCode: code } });
+    if (!existing) return code;
+  }
+  return Math.random().toString(36).substring(2, 6).toUpperCase() + Date.now().toString(36).slice(-4).toUpperCase();
+}
+
 // ─── Register ─────────────────────────────────────────────────────────────────
 
 export async function register(req: AuthenticatedRequest, res: Response): Promise<void> {
-  const { email, password, firstName, lastName, role, phone, country } = req.body;
+  const { email, password, firstName, lastName, role, phone, country, referralCode } = req.body;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -58,6 +70,18 @@ export async function register(req: AuthenticatedRequest, res: Response): Promis
   const validCountries = ['IN', 'AE', 'SG', 'US'];
   const passwordHash = await hashPassword(password);
 
+  // Generate a unique referral code for the new user
+  const newUserReferralCode = await generateUniqueReferralCode();
+
+  // Resolve the referrer (if a referral code was provided)
+  let referrer: { id: string } | null = null;
+  if (referralCode) {
+    referrer = await prisma.user.findUnique({
+      where: { referralCode: String(referralCode) },
+      select: { id: true },
+    });
+  }
+
   const user = await prisma.user.create({
     data: {
       email,
@@ -68,6 +92,8 @@ export async function register(req: AuthenticatedRequest, res: Response): Promis
       phone,
       country: validCountries.includes(country) ? country : null,
       isVerified: false,
+      referralCode: newUserReferralCode,
+      referredBy: referrer ? String(referralCode) : null,
     },
   });
 
@@ -75,6 +101,45 @@ export async function register(req: AuthenticatedRequest, res: Response): Promis
   const countryCurrency: Record<string, string> = { IN: 'INR', AE: 'AED', SG: 'SGD', US: 'USD' };
   const walletCurrency = (country && countryCurrency[country]) || 'USD';
   await prisma.wallet.create({ data: { userId: user.id, currency: walletCurrency } });
+
+  // Handle referral reward: credit $10 to the referrer's wallet
+  if (referrer) {
+    try {
+      await prisma.$transaction([
+        // Create the referral record
+        prisma.referral.create({
+          data: {
+            referrerId: referrer.id,
+            referredId: user.id,
+            reward: 10.0,
+            status: 'credited',
+          },
+        }),
+        // Upsert referrer's wallet and credit $10
+        prisma.wallet.upsert({
+          where: { userId: referrer.id },
+          create: { userId: referrer.id, balance: 10.0, totalEarned: 10.0 },
+          update: {
+            balance: { increment: 10.0 },
+            totalEarned: { increment: 10.0 },
+          },
+        }),
+        // Create a credit transaction for the referrer
+        prisma.transaction.create({
+          data: {
+            userId: referrer.id,
+            type: 'credit',
+            amount: 10.0,
+            status: 'completed',
+            description: `Referral bonus: ${firstName} ${lastName} joined using your code`,
+            metadata: JSON.stringify({ type: 'referral_bonus', referredUserId: user.id }),
+          },
+        }),
+      ]);
+    } catch (err) {
+      console.error('[REFERRAL] Failed to process referral reward:', err);
+    }
+  }
 
   // Send OTP — if email fails, still return so user can use resend
   try {

@@ -37,6 +37,8 @@ model User {
   verificationToken String?
   refreshToken      String?
   isActive          Boolean   @default(true)
+  referralCode      String?   @unique
+  referredBy        String?   // stores the referral code used at signup
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -66,6 +68,8 @@ model User {
   buildPlans             BuildPlan[]           @relation("buildPlanPoster")
   buildMedia             BuildMedia[]          @relation("buildMediaUploader")
   loanApplications       LoanApplication[]
+  referralsGiven         Referral[]            @relation("referrerOf")
+  referralReceived       Referral?             @relation("referredBy")
 }
 
 model Job {
@@ -599,4 +603,17 @@ model PasswordResetToken {
   createdAt DateTime @default(now())
 
   @@index([email])
+}
+
+// ─── Referral System ──────────────────────────────────────────────────────────
+
+model Referral {
+  id          String   @id @default(cuid())
+  referrerId  String
+  referrer    User     @relation("referrerOf", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredId  String   @unique
+  referred    User     @relation("referredBy", fields: [referredId], references: [id], onDelete: Cascade)
+  reward      Float    @default(10.0)
+  status      String   @default("credited")  // credited|pending
+  createdAt   DateTime @default(now())
 }
