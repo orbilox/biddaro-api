@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
+import { sendDisputeOpenedEmail } from '../utils/email';
 import type { AuthenticatedRequest } from '../types';
 
 const DISPUTE_INCLUDE = {
@@ -54,6 +55,17 @@ export async function openDispute(req: AuthenticatedRequest, res: Response): Pro
   const otherId = userId === contract.posterId ? contract.contractorId : contract.posterId;
   await notify(otherId, 'dispute_opened', 'Dispute Opened',
     `A dispute has been raised on your contract.`, { disputeId: dispute.id });
+
+  // Fire-and-forget: email other party about dispute
+  prisma.user.findUnique({ where: { id: otherId }, select: { email: true, firstName: true } })
+    .then(other => {
+      if (other) return sendDisputeOpenedEmail({
+        recipientEmail: other.email, recipientName: other.firstName,
+        raisedByName: `${dispute.raisedBy.firstName} ${dispute.raisedBy.lastName}`,
+        jobTitle: dispute.contract.job.title,
+        contractId: dispute.contract.id,
+      });
+    }).catch(err => console.error('[EMAIL] dispute_opened:', err));
 
   sendCreated(res, dispute, 'Dispute opened');
 }

@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
+import { sendBidReceivedEmail, sendBidAcceptedEmail } from '../utils/email';
 import type { AuthenticatedRequest } from '../types';
 
 const BID_INCLUDE = {
@@ -77,6 +78,16 @@ export async function createBid(req: AuthenticatedRequest, res: Response): Promi
     `${bid.contractor.firstName} ${bid.contractor.lastName} submitted a bid of $${amount} on your job "${job.title}"`,
     { bidId: bid.id, jobId },
   );
+
+  // Fire-and-forget: email poster about new bid
+  prisma.user.findUnique({ where: { id: job.posterId }, select: { email: true, firstName: true } })
+    .then(poster => {
+      if (poster) return sendBidReceivedEmail({
+        posterEmail: poster.email, posterName: poster.firstName,
+        contractorName: `${bid.contractor.firstName} ${bid.contractor.lastName}`,
+        jobTitle: job.title, bidAmount: bid.amount, jobId,
+      });
+    }).catch(err => console.error('[EMAIL] bid_received:', err));
 
   sendCreated(res, parseBidData(bid as unknown as Record<string, unknown>), 'Bid submitted successfully');
 }
@@ -193,6 +204,17 @@ export async function acceptBid(req: AuthenticatedRequest, res: Response): Promi
     `Your bid of $${bid.amount} for "${bid.job.title}" has been accepted. A contract has been created.`,
     { contractId: contract.id, jobId: bid.jobId },
   );
+
+  // Fire-and-forget: email contractor about accepted bid
+  prisma.user.findUnique({ where: { id: bid.contractorId }, select: { email: true } })
+    .then(contractor => {
+      if (contractor) return sendBidAcceptedEmail({
+        contractorEmail: contractor.email,
+        contractorName: `${bid.contractor.firstName} ${bid.contractor.lastName}`,
+        posterName: bid.job.poster ? `${bid.job.poster.firstName} ${bid.job.poster.lastName}` : 'Client',
+        jobTitle: bid.job.title, contractId: contract.id, amount: bid.amount,
+      });
+    }).catch(err => console.error('[EMAIL] bid_accepted:', err));
 
   sendSuccess(res, contract, 'Bid accepted and contract created');
 }

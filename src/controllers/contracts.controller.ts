@@ -3,6 +3,7 @@ import { prisma } from '../config/database';
 import { sendSuccess, sendError, sendNotFound, sendForbidden } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
 import { config } from '../config';
+import { sendEscrowFundedEmail, sendMilestoneApprovedEmail } from '../utils/email';
 import type { AuthenticatedRequest } from '../types';
 
 function tryParse(val: unknown) {
@@ -111,6 +112,19 @@ export async function fundEscrow(req: AuthenticatedRequest, res: Response): Prom
     'Escrow Funded 🔒',
     `The client has funded the escrow ($${escrowAmount.toFixed(2)}). You can now start working!`,
     { contractId: contract.id });
+
+  // Fire-and-forget: email contractor that escrow is funded
+  Promise.all([
+    prisma.user.findUnique({ where: { id: contract.contractorId }, select: { email: true, firstName: true } }),
+    prisma.user.findUnique({ where: { id: contract.posterId }, select: { firstName: true } }),
+    prisma.job.findUnique({ where: { id: contract.jobId }, select: { title: true } }),
+  ]).then(([contractor, poster, job]) => {
+    if (contractor && poster && job) return sendEscrowFundedEmail({
+      contractorEmail: contractor.email, contractorName: contractor.firstName,
+      posterName: poster.firstName, jobTitle: job.title,
+      contractId: contract.id, amount: escrowAmount,
+    });
+  }).catch(err => console.error('[EMAIL] escrow_funded:', err));
 
   sendSuccess(res, null, 'Escrow funded successfully. Work can now begin.');
 }
@@ -403,6 +417,18 @@ export async function approveMilestone(req: AuthenticatedRequest, res: Response)
       'All milestones have been approved. The contract is now complete.',
       { contractId: contract.id });
   }
+
+  // Fire-and-forget: email contractor about milestone payment / contract completion
+  Promise.all([
+    prisma.user.findUnique({ where: { id: contract.contractorId }, select: { email: true, firstName: true } }),
+    prisma.job.findUnique({ where: { id: contract.jobId }, select: { title: true } }),
+  ]).then(([contractor, job]) => {
+    if (contractor && job) return sendMilestoneApprovedEmail({
+      contractorEmail: contractor.email, contractorName: contractor.firstName,
+      jobTitle: job.title, contractId: contract.id,
+      milestoneTitle: mTitle, payout: contractorPayout, allDone: allApproved,
+    });
+  }).catch(err => console.error('[EMAIL] milestone_approved:', err));
 
   sendSuccess(res, null, `$${contractorPayout.toFixed(2)} released to contractor${allApproved ? ' — Contract completed!' : ''}`);
 }
