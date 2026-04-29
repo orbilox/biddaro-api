@@ -8,6 +8,7 @@ import path from 'path';
 import { config } from './config';
 import routes from './routes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { stripeWebhook } from './controllers/payments.controller';
 
 const app = express();
 
@@ -72,6 +73,13 @@ const authLimiter = rateLimit({
 });
 app.use('/api/v1/auth/login', authLimiter);
 app.use('/api/v1/auth/register', authLimiter);
+
+// ─── Stripe webhook — MUST be before express.json() (needs raw body for signature) ──
+app.post(
+  '/api/v1/payments/stripe-webhook',
+  express.raw({ type: 'application/json' }),
+  stripeWebhook,
+);
 
 // ─── Body parsing ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));

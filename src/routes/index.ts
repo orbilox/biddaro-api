@@ -22,6 +22,7 @@ import pmRoutes from './pm.routes';
 import buildPlannerRoutes from './buildPlanner.routes';
 import loansRoutes from './loans.routes';
 import contactRoutes from './contact.routes';
+import paymentsRoutes from './payments.routes';
 
 const router = Router();
 
@@ -78,6 +79,7 @@ router.use('/pm', pmRoutes);
 router.use('/build-planner', buildPlannerRoutes);
 router.use('/loans', loansRoutes);
 router.use('/contact', contactRoutes);
+router.use('/payments', paymentsRoutes);
 
 // ─── One-time admin promotion ────────────────────────────────────────────────
 import { prisma } from '../config/database';

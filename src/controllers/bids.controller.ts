@@ -206,15 +206,17 @@ export async function acceptBid(req: AuthenticatedRequest, res: Response): Promi
   );
 
   // Fire-and-forget: email contractor about accepted bid
-  prisma.user.findUnique({ where: { id: bid.contractorId }, select: { email: true } })
-    .then(contractor => {
-      if (contractor) return sendBidAcceptedEmail({
-        contractorEmail: contractor.email,
-        contractorName: `${bid.contractor.firstName} ${bid.contractor.lastName}`,
-        posterName: bid.job.poster ? `${bid.job.poster.firstName} ${bid.job.poster.lastName}` : 'Client',
-        jobTitle: bid.job.title, contractId: contract.id, amount: bid.amount,
-      });
-    }).catch(err => console.error('[EMAIL] bid_accepted:', err));
+  Promise.all([
+    prisma.user.findUnique({ where: { id: bid.contractorId }, select: { email: true } }),
+    prisma.user.findUnique({ where: { id: bid.job.posterId }, select: { firstName: true, lastName: true } }),
+  ]).then(([contractor, poster]) => {
+    if (contractor) return sendBidAcceptedEmail({
+      contractorEmail: contractor.email,
+      contractorName: `${bid.contractor.firstName} ${bid.contractor.lastName}`,
+      posterName: poster ? `${poster.firstName} ${poster.lastName}` : 'Client',
+      jobTitle: bid.job.title, contractId: contract.id, amount: bid.amount,
+    });
+  }).catch(err => console.error('[EMAIL] bid_accepted:', err));
 
   sendSuccess(res, contract, 'Bid accepted and contract created');
 }

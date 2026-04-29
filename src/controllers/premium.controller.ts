@@ -189,19 +189,38 @@ export async function subscribePremium(req: AuthenticatedRequest, res: Response)
   const days = PLAN_DAYS[plan];
   const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
-  const subscription = await prisma.premiumSubscription.create({
-    data: {
-      userId,
-      plan,
-      amount,
-      expiresAt,
-    },
-    include: {
-      user: {
-        select: { id: true, firstName: true, lastName: true, email: true },
+  // ── Verify wallet balance before charging ─────────────────────────────────
+  const wallet = await prisma.wallet.findUnique({ where: { userId } });
+  if (!wallet || Number(wallet.balance) < amount) {
+    sendError(
+      res,
+      `Insufficient wallet balance. You need $${amount.toFixed(2)} to subscribe. Please add funds first.`,
+      400,
+    );
+    return;
+  }
+
+  // ── Deduct wallet + create subscription atomically ────────────────────────
+  const [subscription] = await prisma.$transaction([
+    prisma.premiumSubscription.create({
+      data: { userId, plan, amount, expiresAt },
+      include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    }),
+    prisma.wallet.update({
+      where: { userId },
+      data: { balance: { decrement: amount } },
+    }),
+    prisma.transaction.create({
+      data: {
+        userId,
+        type: 'debit',
+        amount,
+        description: `Biddaro Premium — ${plan} plan`,
+        status: 'completed',
+        metadata: JSON.stringify({ type: 'premium_subscribe', plan }),
       },
-    },
-  });
+    }),
+  ]);
 
   sendCreated(res, subscription, 'Premium subscription activated!');
 }
