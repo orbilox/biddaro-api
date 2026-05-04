@@ -136,6 +136,16 @@ export async function register(req: AuthenticatedRequest, res: Response): Promis
           },
         }),
       ]);
+      // In-app notification for the referrer (fire-and-forget)
+      prisma.notification.create({
+        data: {
+          userId: referrer.id,
+          type: 'referral_reward',
+          title: '🎉 Referral Bonus!',
+          message: `${firstName} ${lastName} joined Biddaro using your referral code. $10.00 has been added to your wallet!`,
+          data: JSON.stringify({ amount: 10, referredUserId: user.id }),
+        },
+      }).catch(() => {});
     } catch (err) {
       console.error('[REFERRAL] Failed to process referral reward:', err);
     }

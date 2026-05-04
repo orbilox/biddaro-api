@@ -74,9 +74,10 @@ export async function getMyReferralInfo(req: AuthenticatedRequest, res: Response
   const referralCount = user.referralsGiven.length;
   const totalEarned = user.referralsGiven.reduce((sum, r) => sum + r.reward, 0);
 
-  const referredUsers = user.referralsGiven.map((r) => ({
-    name: `${r.referred.firstName} ${r.referred.lastName}`,
-    joinedAt: r.createdAt,
+  const referrals = user.referralsGiven.map((r) => ({
+    id: r.id,
+    referredName: `${r.referred.firstName} ${r.referred.lastName}`,
+    createdAt: r.createdAt,
     reward: r.reward,
     status: r.status,
   }));
@@ -85,7 +86,7 @@ export async function getMyReferralInfo(req: AuthenticatedRequest, res: Response
     referralCode: user.referralCode,
     referralCount,
     totalEarned,
-    referredUsers,
+    referrals,
   });
 }
 
