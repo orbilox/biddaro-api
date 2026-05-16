@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../config/database';
 import { sendSuccess, sendError, sendNotFound } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
+import { sendPushToUser, userWantsPush } from '../utils/push';
 import type { AuthenticatedRequest } from '../types';
 
 // ─── Get wallet ───────────────────────────────────────────────────────────────
@@ -66,6 +67,17 @@ export async function deposit(req: AuthenticatedRequest, res: Response): Promise
     }),
   ]);
 
+  // Push notification for deposit confirmation
+  userWantsPush(userId, 'wallet').then(wants => {
+    if (wants) {
+      sendPushToUser(userId, {
+        title: 'Deposit Successful',
+        body: `$${numAmount.toFixed(2)} has been added to your wallet`,
+        url: '/wallet',
+      }).catch(() => {});
+    }
+  }).catch(() => {});
+
   sendSuccess(res, transaction, `$${numAmount.toFixed(2)} deposited successfully`);
 }
 
@@ -98,6 +110,17 @@ export async function withdraw(req: AuthenticatedRequest, res: Response): Promis
       data: { balance: { decrement: numAmount } },
     }),
   ]);
+
+  // Push notification for withdrawal initiation
+  userWantsPush(userId, 'wallet').then(wants => {
+    if (wants) {
+      sendPushToUser(userId, {
+        title: 'Withdrawal Initiated',
+        body: `Your withdrawal of $${numAmount.toFixed(2)} is being processed`,
+        url: '/wallet',
+      }).catch(() => {});
+    }
+  }).catch(() => {});
 
   sendSuccess(res, transaction, `Withdrawal of $${numAmount.toFixed(2)} initiated`);
 }

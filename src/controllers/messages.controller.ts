@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
+import { sendPushToUser, userWantsPush } from '../utils/push';
 import type { AuthenticatedRequest } from '../types';
 
 // ─── Get conversations ────────────────────────────────────────────────────────
@@ -123,6 +124,28 @@ export async function sendMessage(req: AuthenticatedRequest, res: Response): Pro
       receiver: { select: { id: true, firstName: true, lastName: true, profileImage: true } },
     },
   });
+
+  // In-app notification for receiver
+  prisma.notification.create({
+    data: {
+      userId: receiverId,
+      type: 'new_message',
+      title: 'New Message',
+      message: `${message.sender.firstName} ${message.sender.lastName} sent you a message`,
+      data: JSON.stringify({ url: '/messages' }),
+    },
+  }).catch(() => {});
+
+  // Push notification (respects receiver's preferences)
+  userWantsPush(receiverId, 'messages').then(wants => {
+    if (wants) {
+      sendPushToUser(receiverId, {
+        title: 'New Message',
+        body: `${message.sender.firstName} sent you a message`,
+        url: '/messages',
+      }).catch(() => {});
+    }
+  }).catch(() => {});
 
   sendCreated(res, message, 'Message sent');
 }

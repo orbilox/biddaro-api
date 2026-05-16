@@ -50,6 +50,8 @@ export async function updateProfile(req: AuthenticatedRequest, res: Response): P
     'availability', 'hourlyRate', 'website', 'languages', 'serviceRadius',
     // Verification documents
     'idDocUrl', 'tradeLicenseUrl', 'insuranceCertUrl', 'verificationStatus',
+    // Notification preferences (JSON string)
+    'notifPrefs',
   ];
 
   const data: Record<string, unknown> = {};

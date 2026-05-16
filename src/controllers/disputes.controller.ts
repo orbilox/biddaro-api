@@ -3,6 +3,7 @@ import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
 import { sendDisputeOpenedEmail } from '../utils/email';
+import { sendPushToUser, userWantsPush } from '../utils/push';
 import type { AuthenticatedRequest } from '../types';
 
 const DISPUTE_INCLUDE = {
@@ -197,5 +198,11 @@ export async function resolveDispute(req: AuthenticatedRequest, res: Response): 
 async function notify(userId: string, type: string, title: string, message: string, data?: Record<string, unknown>) {
   await prisma.notification.create({
     data: { userId, type, title, message, data: data ? JSON.stringify(data) : undefined },
+  }).catch(() => {});
+  // Push notification (respects user's dispute preference)
+  userWantsPush(userId, 'disputes').then(wants => {
+    if (wants) {
+      sendPushToUser(userId, { title, body: message, url: '/disputes' }).catch(() => {});
+    }
   }).catch(() => {});
 }

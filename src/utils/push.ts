@@ -18,6 +18,21 @@ webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
 
 export const vapidPublicKey = VAPID_PUBLIC;
 
+// ─── Notification preference check ───────────────────────────────────────────
+// Returns true if user has push enabled for this category (or has no prefs saved).
+// Categories: bids | contracts | messages | wallet | disputes
+
+export async function userWantsPush(userId: string, category: string): Promise<boolean> {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { notifPrefs: true } });
+    if (!user?.notifPrefs) return true; // default all-on
+    const prefs = JSON.parse(user.notifPrefs) as Record<string, boolean>;
+    return prefs[category] !== false;
+  } catch {
+    return true; // fail open
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function parseSubs(raw: string | null | undefined): webpush.PushSubscription[] {

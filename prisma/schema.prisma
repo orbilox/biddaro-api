@@ -27,6 +27,7 @@ model User {
   insuranceCertUrl  String?   // Insurance certificate URL
   verificationStatus String?  @default("none")  // none | pending | verified | rejected
   pushSubs           String?  // JSON: webpush.PushSubscription[] — persists across restarts
+  notifPrefs         String?  // JSON: { bids, contracts, messages, wallet, disputes } — all true by default
   yearsExperience   Int?
   rating            Float?    @default(0)
   // ── Extended contractor profile ──────────────────────────────────────────
