@@ -4,7 +4,7 @@ import { sendSuccess, sendError, sendNotFound, sendForbidden } from '../utils/re
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
 import { config } from '../config';
 import { sendEscrowFundedEmail, sendMilestoneApprovedEmail } from '../utils/email';
-import { sendPushToUser } from '../utils/push';
+import { sendPushToUser, userWantsPush } from '../utils/push';
 import type { AuthenticatedRequest } from '../types';
 
 function tryParse(val: unknown) {
@@ -647,6 +647,8 @@ async function notify(userId: string, type: string, title: string, message: stri
   await prisma.notification.create({
     data: { userId, type, title, message, data: data ? JSON.stringify(data) : undefined },
   }).catch(() => {});
-  // Also fire browser push notification
-  sendPushToUser(userId, { title, body: message, url: data?.url as string | undefined }).catch(() => {});
+  // Push — respect user's contracts notification preference
+  userWantsPush(userId, 'contracts').then(wants => {
+    if (wants) sendPushToUser(userId, { title, body: message, url: data?.url as string | undefined }).catch(() => {});
+  }).catch(() => {});
 }
