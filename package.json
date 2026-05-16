@@ -8,7 +8,7 @@
     "dev": "nodemon --exec ts-node src/server.ts",
     "build": "prisma generate && tsc",
     "postinstall": "prisma generate",
-    "start": "node dist/server.js",
+    "start": "prisma db push --accept-data-loss && node dist/server.js",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",

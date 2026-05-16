@@ -1,16 +1,8 @@
 import { Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../config/database';
 import type { AuthenticatedRequest } from '../types';
 import { ADDONS_CATALOG, getAddOn } from '../config/addons.catalog';
-
-const prisma = new PrismaClient();
-
-function sendSuccess(res: Response, data: unknown, message = 'Success') {
-  res.json({ success: true, message, data });
-}
-function sendError(res: Response, message: string, status = 400) {
-  res.status(status).json({ success: false, message });
-}
+import { sendSuccess, sendError } from '../utils/response';
 
 // ─── List catalog (with user's installed status) ──────────────────────────────
 
