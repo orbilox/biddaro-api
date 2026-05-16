@@ -359,3 +359,81 @@ export async function sendDisputeOpenedEmail(opts: {
     }),
   });
 }
+
+/** 6. Deposit approved — notify the user their bank transfer was credited */
+export async function sendDepositApprovedEmail(opts: {
+  recipientEmail: string; recipientName: string;
+  amount: number; transactionId: string;
+  adminNote?: string;
+}): Promise<void> {
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: opts.recipientEmail, name: opts.recipientName }],
+    subject: `Your deposit of $${opts.amount.toFixed(2)} has been approved`,
+    htmlContent: brandedHtml({
+      preheader: `$${opts.amount.toFixed(2)} has been added to your Biddaro wallet.`,
+      bodyTitle: 'Deposit approved ✅',
+      bodyLines: [
+        `Hi ${opts.recipientName},`,
+        `Your bank transfer deposit of <strong>$${opts.amount.toFixed(2)}</strong> (Ref: <code>${opts.transactionId}</code>) has been verified and credited to your Biddaro wallet.`,
+        'The funds are available immediately. You can now post jobs, fund escrow, or use them for any Biddaro transaction.',
+        ...(opts.adminNote ? [`Note from our team: ${opts.adminNote}`] : []),
+      ],
+      ctaLink: `${FRONTEND()}/wallet`,
+      ctaLabel: 'View Wallet →',
+    }),
+  });
+}
+
+/** 7. Deposit rejected — notify the user their bank transfer was not approved */
+export async function sendDepositRejectedEmail(opts: {
+  recipientEmail: string; recipientName: string;
+  amount: number; transactionId: string;
+  adminNote?: string;
+}): Promise<void> {
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: opts.recipientEmail, name: opts.recipientName }],
+    subject: `Your deposit request could not be verified`,
+    htmlContent: brandedHtml({
+      preheader: 'Your deposit request was reviewed but could not be approved.',
+      bodyTitle: 'Deposit request declined',
+      bodyLines: [
+        `Hi ${opts.recipientName},`,
+        `We reviewed your deposit request of <strong>$${opts.amount.toFixed(2)}</strong> (Ref: <code>${opts.transactionId}</code>) but were unable to verify the bank transfer.`,
+        ...(opts.adminNote
+          ? [`Reason: ${opts.adminNote}`]
+          : ['This can happen if the transaction ID or screenshot could not be matched. Please double-check and resubmit.']),
+        'If you believe this is an error, please contact our support team with your proof of payment.',
+      ],
+      ctaLink: `${FRONTEND()}/wallet`,
+      ctaLabel: 'Go to Wallet →',
+      footerNote: 'No funds have been deducted from your bank account — this was a manual transfer review.',
+    }),
+  });
+}
+
+/** 8. New message received — email notification */
+export async function sendNewMessageEmail(opts: {
+  recipientEmail: string; recipientName: string;
+  senderName: string;
+}): Promise<void> {
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: opts.recipientEmail, name: opts.recipientName }],
+    subject: `${opts.senderName} sent you a message on Biddaro`,
+    htmlContent: brandedHtml({
+      preheader: `You have a new message from ${opts.senderName}.`,
+      bodyTitle: 'New message 💬',
+      bodyLines: [
+        `Hi ${opts.recipientName},`,
+        `<strong>${opts.senderName}</strong> has sent you a message on Biddaro.`,
+        'Log in to read and reply.',
+      ],
+      ctaLink: `${FRONTEND()}/messages`,
+      ctaLabel: 'Read Message →',
+      footerNote: 'You can manage your notification preferences in your account settings.',
+    }),
+  });
+}
+

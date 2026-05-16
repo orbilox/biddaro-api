@@ -2,6 +2,8 @@ import { Response } from 'express';
 import { prisma } from '../config/database';
 import { sendSuccess, sendError, sendNotFound } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
+import { sendDepositApprovedEmail, sendDepositRejectedEmail } from '../utils/email';
+import { sendPushToUser, userWantsPush } from '../utils/push';
 import type { AuthenticatedRequest } from '../types';
 
 // ─── Create a deposit request (user submits proof of bank transfer) ───────────
@@ -107,7 +109,7 @@ export async function adminReviewDepositRequest(req: AuthenticatedRequest, res: 
 
   const depositRequest = await prisma.depositRequest.findUnique({
     where: { id },
-    include: { user: { select: { id: true, email: true } } },
+    include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
   });
   if (!depositRequest) { sendNotFound(res, 'Deposit request'); return; }
   if (depositRequest.status !== 'pending') {
@@ -116,6 +118,9 @@ export async function adminReviewDepositRequest(req: AuthenticatedRequest, res: 
 
   const reviewedAt = new Date();
   const reviewedBy = req.user!.userId;
+  const userId = depositRequest.userId;
+  const { user } = depositRequest;
+  const userName = `${user.firstName} ${user.lastName}`;
 
   if (action === 'approve') {
     // Atomically update status + credit wallet + create transaction record
@@ -125,9 +130,9 @@ export async function adminReviewDepositRequest(req: AuthenticatedRequest, res: 
         data: { status: 'approved', adminNote: adminNote || null, reviewedBy, reviewedAt },
       }),
       prisma.wallet.upsert({
-        where: { userId: depositRequest.userId },
+        where: { userId },
         create: {
-          userId: depositRequest.userId,
+          userId,
           balance: depositRequest.amount,
           pendingBalance: 0,
           totalEarned: depositRequest.amount,
@@ -139,7 +144,7 @@ export async function adminReviewDepositRequest(req: AuthenticatedRequest, res: 
       }),
       prisma.transaction.create({
         data: {
-          userId: depositRequest.userId,
+          userId,
           type: 'credit',
           amount: depositRequest.amount,
           status: 'completed',
@@ -153,6 +158,24 @@ export async function adminReviewDepositRequest(req: AuthenticatedRequest, res: 
       }),
     ]);
 
+    // Push notification (non-blocking)
+    userWantsPush(userId, 'wallet').then(wants => {
+      if (wants) sendPushToUser(userId, {
+        title: 'Deposit Approved ✅',
+        body: `$${depositRequest.amount.toFixed(2)} has been added to your wallet`,
+        url: '/wallet',
+      }).catch(() => {});
+    }).catch(() => {});
+
+    // Email notification (non-blocking)
+    sendDepositApprovedEmail({
+      recipientEmail: user.email,
+      recipientName: userName,
+      amount: depositRequest.amount,
+      transactionId: depositRequest.transactionId,
+      adminNote: adminNote || undefined,
+    }).catch(() => {});
+
     sendSuccess(res, updated, `$${depositRequest.amount.toFixed(2)} credited to user's wallet.`);
   } else {
     // Reject — just update status
@@ -160,6 +183,25 @@ export async function adminReviewDepositRequest(req: AuthenticatedRequest, res: 
       where: { id },
       data: { status: 'rejected', adminNote: adminNote || null, reviewedBy, reviewedAt },
     });
+
+    // Push notification (non-blocking)
+    userWantsPush(userId, 'wallet').then(wants => {
+      if (wants) sendPushToUser(userId, {
+        title: 'Deposit Request Declined',
+        body: `Your deposit of $${depositRequest.amount.toFixed(2)} could not be verified`,
+        url: '/wallet',
+      }).catch(() => {});
+    }).catch(() => {});
+
+    // Email notification (non-blocking)
+    sendDepositRejectedEmail({
+      recipientEmail: user.email,
+      recipientName: userName,
+      amount: depositRequest.amount,
+      transactionId: depositRequest.transactionId,
+      adminNote: adminNote || undefined,
+    }).catch(() => {});
+
     sendSuccess(res, updated, 'Deposit request rejected.');
   }
 }

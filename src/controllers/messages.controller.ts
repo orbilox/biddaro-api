@@ -3,6 +3,7 @@ import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
 import { sendPushToUser, userWantsPush } from '../utils/push';
+import { sendNewMessageEmail } from '../utils/email';
 import type { AuthenticatedRequest } from '../types';
 
 // ─── Get conversations ────────────────────────────────────────────────────────
@@ -114,7 +115,10 @@ export async function sendMessage(req: AuthenticatedRequest, res: Response): Pro
   if (senderId === receiverId) { sendError(res, 'Cannot send message to yourself', 400); return; }
 
   // Verify receiver exists
-  const receiver = await prisma.user.findUnique({ where: { id: receiverId } });
+  const receiver = await prisma.user.findUnique({
+    where: { id: receiverId },
+    select: { id: true, email: true, firstName: true, lastName: true },
+  });
   if (!receiver) { sendNotFound(res, 'Recipient'); return; }
 
   const message = await prisma.message.create({
@@ -136,7 +140,7 @@ export async function sendMessage(req: AuthenticatedRequest, res: Response): Pro
     },
   }).catch(() => {});
 
-  // Push notification (respects receiver's preferences)
+  // Push + email notifications (non-blocking, respect preferences)
   userWantsPush(receiverId, 'messages').then(wants => {
     if (wants) {
       sendPushToUser(receiverId, {
@@ -145,6 +149,12 @@ export async function sendMessage(req: AuthenticatedRequest, res: Response): Pro
         url: '/messages',
       }).catch(() => {});
     }
+  }).catch(() => {});
+
+  sendNewMessageEmail({
+    recipientEmail: receiver.email,
+    recipientName: `${receiver.firstName} ${receiver.lastName}`,
+    senderName: `${message.sender.firstName} ${message.sender.lastName}`,
   }).catch(() => {});
 
   sendCreated(res, message, 'Message sent');
