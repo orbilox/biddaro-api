@@ -84,34 +84,80 @@ router.use('/contact', contactRoutes);
 router.use('/payments', paymentsRoutes);
 router.use('/referral', referralRoutes);
 
-// ─── One-time admin promotion ────────────────────────────────────────────────
+// ─── One-time setup endpoints ─────────────────────────────────────────────────
 import { prisma } from '../config/database';
 import bcrypt from 'bcryptjs';
-router.post('/setup/make-admin', async (req: Request, res: Response) => {
-  const { email, secret } = req.body;
-  const validSecret = process.env.SETUP_SECRET || 'biddaro_setup_2024';
-  if (secret !== validSecret) {
-    return res.status(403).json({ success: false, message: 'Forbidden' });
+
+/** Create or fully reset the super-admin account — protected by SETUP_SECRET */
+router.post('/setup/create-admin', async (req: Request, res: Response) => {
+  try {
+    const { email, password, secret } = req.body;
+    const validSecret = process.env.SETUP_SECRET || 'biddaro_setup_2024';
+    if (secret !== validSecret) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'email and password required' });
+    }
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = await prisma.user.upsert({
+      where: { email },
+      update: { passwordHash, role: 'admin', isVerified: true, isActive: true },
+      create: {
+        email,
+        passwordHash,
+        firstName: 'Super',
+        lastName: 'Admin',
+        role: 'admin',
+        isVerified: true,
+        isActive: true,
+      },
+    });
+    // Ensure wallet exists
+    await prisma.wallet.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: { userId: user.id, balance: 0, pendingBalance: 0, totalEarned: 0 },
+    });
+    return res.json({ success: true, message: `Admin account ready: ${user.email}` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
   }
-  const user = await prisma.user.update({
-    where: { email },
-    data: { role: 'admin', isVerified: true },
-  });
-  return res.json({ success: true, message: `${user.email} is now admin` });
+});
+
+router.post('/setup/make-admin', async (req: Request, res: Response) => {
+  try {
+    const { email, secret } = req.body;
+    const validSecret = process.env.SETUP_SECRET || 'biddaro_setup_2024';
+    if (secret !== validSecret) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    const user = await prisma.user.update({
+      where: { email },
+      data: { role: 'admin', isVerified: true },
+    });
+    return res.json({ success: true, message: `${user.email} is now admin` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 router.post('/setup/reset-admin-password', async (req: Request, res: Response) => {
-  const { email, newPassword, secret } = req.body;
-  const validSecret = process.env.SETUP_SECRET || 'biddaro_setup_2024';
-  if (secret !== validSecret) {
-    return res.status(403).json({ success: false, message: 'Forbidden' });
+  try {
+    const { email, newPassword, secret } = req.body;
+    const validSecret = process.env.SETUP_SECRET || 'biddaro_setup_2024';
+    if (secret !== validSecret) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    const user = await prisma.user.update({
+      where: { email },
+      data: { passwordHash },
+    });
+    return res.json({ success: true, message: `Password reset for ${user.email}` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
   }
-  const passwordHash = await bcrypt.hash(newPassword, 12);
-  const user = await prisma.user.update({
-    where: { email },
-    data: { passwordHash },
-  });
-  return res.json({ success: true, message: `Password reset for ${user.email}` });
 });
 
 export default router;
