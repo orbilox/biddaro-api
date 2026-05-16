@@ -1,10 +1,12 @@
 /**
  * Web Push Notifications Utility
  * VAPID keys are stored in environment variables.
- * In-memory subscription store (resets on restart — swap for DB in production).
+ * Subscriptions are persisted in the User.pushSubs column (JSON array)
+ * so they survive server restarts / Railway redeploys.
  */
 
 import webpush from 'web-push';
+import { prisma } from '../config/database';
 
 // ─── VAPID setup ─────────────────────────────────────────────────────────────
 
@@ -16,21 +18,36 @@ webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
 
 export const vapidPublicKey = VAPID_PUBLIC;
 
-// ─── In-memory subscription store ────────────────────────────────────────────
-// Maps userId → array of PushSubscription objects (multi-device)
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const subscriptions = new Map<string, webpush.PushSubscription[]>();
-
-export function saveSubscription(userId: string, sub: webpush.PushSubscription) {
-  const existing = subscriptions.get(userId) ?? [];
-  // Dedupe by endpoint
-  const filtered = existing.filter(s => s.endpoint !== sub.endpoint);
-  subscriptions.set(userId, [...filtered, sub]);
+function parseSubs(raw: string | null | undefined): webpush.PushSubscription[] {
+  if (!raw) return [];
+  try { return JSON.parse(raw) as webpush.PushSubscription[]; } catch { return []; }
 }
 
-export function removeSubscription(userId: string, endpoint: string) {
-  const existing = subscriptions.get(userId) ?? [];
-  subscriptions.set(userId, existing.filter(s => s.endpoint !== endpoint));
+// ─── Save subscription (DB-backed, multi-device) ─────────────────────────────
+
+export async function saveSubscription(userId: string, sub: webpush.PushSubscription) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { pushSubs: true } });
+  const existing = parseSubs(user?.pushSubs);
+  // Dedupe by endpoint
+  const deduped = existing.filter(s => s.endpoint !== sub.endpoint);
+  deduped.push(sub);
+  await prisma.user.update({
+    where: { id: userId },
+    data:  { pushSubs: JSON.stringify(deduped) },
+  });
+}
+
+// ─── Remove subscription ──────────────────────────────────────────────────────
+
+export async function removeSubscription(userId: string, endpoint: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { pushSubs: true } });
+  const filtered = parseSubs(user?.pushSubs).filter(s => s.endpoint !== endpoint);
+  await prisma.user.update({
+    where: { id: userId },
+    data:  { pushSubs: JSON.stringify(filtered) },
+  });
 }
 
 // ─── Send push to a user ──────────────────────────────────────────────────────
@@ -39,8 +56,9 @@ export async function sendPushToUser(
   userId: string,
   payload: { title: string; body: string; icon?: string; url?: string },
 ) {
-  const subs = subscriptions.get(userId);
-  if (!subs || subs.length === 0) return;
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { pushSubs: true } });
+  const subs = parseSubs(user?.pushSubs);
+  if (subs.length === 0) return;
 
   const json = JSON.stringify({
     title: payload.title,
@@ -57,16 +75,18 @@ export async function sendPushToUser(
         await webpush.sendNotification(sub, json);
       } catch (err: any) {
         if (err.statusCode === 410 || err.statusCode === 404) {
-          // Subscription expired
           expired.push(sub.endpoint);
         }
       }
     }),
   );
 
-  // Clean up expired
+  // Clean up expired endpoints in DB
   if (expired.length > 0) {
-    const fresh = (subscriptions.get(userId) ?? []).filter(s => !expired.includes(s.endpoint));
-    subscriptions.set(userId, fresh);
+    const fresh = subs.filter(s => !expired.includes(s.endpoint));
+    await prisma.user.update({
+      where: { id: userId },
+      data:  { pushSubs: JSON.stringify(fresh) },
+    });
   }
 }

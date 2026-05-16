@@ -26,6 +26,7 @@ model User {
   tradeLicenseUrl   String?   // Trade license / contractor license URL
   insuranceCertUrl  String?   // Insurance certificate URL
   verificationStatus String?  @default("none")  // none | pending | verified | rejected
+  pushSubs           String?  // JSON: webpush.PushSubscription[] — persists across restarts
   yearsExperience   Int?
   rating            Float?    @default(0)
   // ── Extended contractor profile ──────────────────────────────────────────
