@@ -48,6 +48,8 @@ export async function updateProfile(req: AuthenticatedRequest, res: Response): P
     // Extended contractor profile
     'portfolio', 'certifications', 'workHistory',
     'availability', 'hourlyRate', 'website', 'languages', 'serviceRadius',
+    // Verification documents
+    'idDocUrl', 'tradeLicenseUrl', 'insuranceCertUrl', 'verificationStatus',
   ];
 
   const data: Record<string, unknown> = {};
@@ -63,6 +65,14 @@ export async function updateProfile(req: AuthenticatedRequest, res: Response): P
 
   if (Object.keys(data).length === 0) {
     sendError(res, 'No valid fields to update', 400); return;
+  }
+
+  // Auto-set verificationStatus to 'pending' when any doc URL is newly provided
+  const docFields = ['idDocUrl', 'tradeLicenseUrl', 'insuranceCertUrl'] as const;
+  const currentUser = await prisma.user.findUnique({ where: { id: req.user!.userId }, select: { idDocUrl: true, tradeLicenseUrl: true, insuranceCertUrl: true, verificationStatus: true } });
+  const anyNewDoc = docFields.some(f => req.body[f] && !currentUser?.[f]);
+  if (anyNewDoc && !data.verificationStatus && currentUser?.verificationStatus !== 'verified') {
+    data.verificationStatus = 'pending';
   }
 
   const user = await prisma.user.update({ where: { id: req.user!.userId }, data });

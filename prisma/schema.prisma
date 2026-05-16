@@ -22,6 +22,10 @@ model User {
   bio               String?
   skills            String?   // JSON array stored as string
   licenseNumber     String?
+  idDocUrl          String?   // Government ID / passport upload URL
+  tradeLicenseUrl   String?   // Trade license / contractor license URL
+  insuranceCertUrl  String?   // Insurance certificate URL
+  verificationStatus String?  @default("none")  // none | pending | verified | rejected
   yearsExperience   Int?
   rating            Float?    @default(0)
   // ── Extended contractor profile ──────────────────────────────────────────

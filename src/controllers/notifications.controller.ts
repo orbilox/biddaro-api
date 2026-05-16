@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../config/database';
 import { sendSuccess } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
+import { saveSubscription, removeSubscription, vapidPublicKey } from '../utils/push';
 import type { AuthenticatedRequest } from '../types';
 
 export async function getNotifications(req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -41,4 +42,31 @@ export async function getUnreadCount(req: AuthenticatedRequest, res: Response): 
     where: { userId: req.user!.userId, isRead: false },
   });
   sendSuccess(res, { unreadCount: count });
+}
+
+// ─── Push subscription endpoints ─────────────────────────────────────────────
+
+/** Returns the VAPID public key so the browser can subscribe */
+export function getVapidPublicKey(_req: AuthenticatedRequest, res: Response): void {
+  sendSuccess(res, { publicKey: vapidPublicKey });
+}
+
+/** Save a browser push subscription for this user */
+export async function subscribePush(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const userId = req.user!.userId;
+  const { endpoint, keys } = req.body;
+  if (!endpoint || !keys?.p256dh || !keys?.auth) {
+    res.status(400).json({ success: false, message: 'Invalid subscription object' });
+    return;
+  }
+  saveSubscription(userId, { endpoint, keys });
+  sendSuccess(res, null, 'Push subscription saved');
+}
+
+/** Remove a browser push subscription (user unsubscribed / changed device) */
+export async function unsubscribePush(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const userId = req.user!.userId;
+  const { endpoint } = req.body;
+  if (endpoint) removeSubscription(userId, endpoint);
+  sendSuccess(res, null, 'Push subscription removed');
 }

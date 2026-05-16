@@ -3,6 +3,7 @@ import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
 import { sendBidReceivedEmail, sendBidAcceptedEmail } from '../utils/email';
+import { sendPushToUser } from '../utils/push';
 import type { AuthenticatedRequest } from '../types';
 
 const BID_INCLUDE = {
@@ -319,4 +320,6 @@ async function createNotification(
   await prisma.notification.create({
     data: { userId, type, title, message, data: data ? JSON.stringify(data) : undefined },
   }).catch(() => {});
+  // Also fire browser push notification
+  sendPushToUser(userId, { title, body: message, url: data?.url as string | undefined }).catch(() => {});
 }
