@@ -437,3 +437,43 @@ export async function sendNewMessageEmail(opts: {
   });
 }
 
+/** 9. Loan application status update */
+export async function sendLoanStatusEmail(opts: {
+  recipientEmail: string; recipientName: string;
+  status: 'under_review' | 'approved' | 'rejected' | 'disbursed';
+  amount: number; approvedAmount?: number; emiAmount?: number; adminNote?: string;
+}): Promise<void> {
+  const statusMap: Record<string, { emoji: string; title: string; preheader: string }> = {
+    under_review: { emoji: '🔍', title: 'Your loan application is under review', preheader: 'Our team is reviewing your loan application.' },
+    approved:     { emoji: '✅', title: 'Your loan application has been approved!', preheader: `Your loan of $${opts.approvedAmount?.toFixed(2) ?? opts.amount.toFixed(2)} has been approved.` },
+    rejected:     { emoji: '❌', title: 'Your loan application was not approved', preheader: 'Your loan application could not be approved at this time.' },
+    disbursed:    { emoji: '💸', title: 'Your loan has been disbursed!', preheader: `Funds have been transferred to your account.` },
+  };
+  const s = statusMap[opts.status] ?? statusMap['under_review'];
+
+  const lines: string[] = [`Hi ${opts.recipientName},`];
+  if (opts.status === 'approved' && opts.approvedAmount) {
+    lines.push(`Great news! Your loan application for <strong>$${opts.amount.toFixed(2)}</strong> has been approved for <strong>$${opts.approvedAmount.toFixed(2)}</strong>.`);
+    if (opts.emiAmount) lines.push(`Your estimated monthly EMI is <strong>$${opts.emiAmount.toFixed(2)}</strong>.`);
+  } else if (opts.status === 'disbursed') {
+    lines.push(`Your approved loan funds have been disbursed. Please check your registered bank account.`);
+  } else if (opts.status === 'rejected') {
+    lines.push(`We were unable to approve your loan application for <strong>$${opts.amount.toFixed(2)}</strong> at this time.`);
+  } else {
+    lines.push(`Your loan application for <strong>$${opts.amount.toFixed(2)}</strong> is currently under review by our team. We'll notify you once a decision is made.`);
+  }
+  if (opts.adminNote) lines.push(`Note: ${opts.adminNote}`);
+
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: opts.recipientEmail, name: opts.recipientName }],
+    subject: `${s.emoji} ${s.title}`,
+    htmlContent: brandedHtml({
+      preheader: s.preheader,
+      bodyTitle: `${s.emoji} ${s.title}`,
+      bodyLines: lines,
+      ctaLink: `${FRONTEND()}/my-loans`,
+      ctaLabel: 'View Loan Application →',
+    }),
+  });
+}

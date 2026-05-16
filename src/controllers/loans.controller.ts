@@ -1,6 +1,8 @@
 import { Response } from 'express';
 import { prisma } from '../config/database';
 import { sendSuccess, sendError } from '../utils/response';
+import { sendPushToUser, userWantsPush } from '../utils/push';
+import { sendLoanStatusEmail } from '../utils/email';
 import type { AuthenticatedRequest } from '../types';
 
 // ─── Apply for a loan ─────────────────────────────────────────────────────────
@@ -80,7 +82,10 @@ export async function adminReviewLoan(req: AuthenticatedRequest, res: Response) 
   const validStatuses = ['under_review', 'approved', 'rejected', 'disbursed'];
   if (!validStatuses.includes(status)) return sendError(res, 'Invalid status', 400);
 
-  const loan = await prisma.loanApplication.findUnique({ where: { id } });
+  const loan = await prisma.loanApplication.findUnique({
+    where: { id },
+    include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+  });
   if (!loan) return sendError(res, 'Loan application not found', 404);
 
   // Calculate EMI if approved
@@ -104,6 +109,51 @@ export async function adminReviewLoan(req: AuthenticatedRequest, res: Response) 
       disbursedAt: status === 'disbursed' ? new Date() : undefined,
     },
   });
+
+  // Notification titles per status
+  const notifTitle: Record<string, string> = {
+    under_review: 'Loan Under Review',
+    approved:     'Loan Approved ✅',
+    rejected:     'Loan Application Declined',
+    disbursed:    'Loan Disbursed 💸',
+  };
+  const notifMsg: Record<string, string> = {
+    under_review: `Your loan application of $${loan.amount.toFixed(2)} is now under review.`,
+    approved:     `Your loan of $${(approvedAmount ? parseFloat(approvedAmount) : loan.amount).toFixed(2)} has been approved!`,
+    rejected:     `Your loan application for $${loan.amount.toFixed(2)} was not approved.${adminNote ? ` Reason: ${adminNote}` : ''}`,
+    disbursed:    `Your approved loan has been disbursed. Check your bank account.`,
+  };
+
+  // In-app notification
+  prisma.notification.create({
+    data: {
+      userId: loan.userId,
+      type: `loan_${status}`,
+      title: notifTitle[status] ?? `Loan ${status}`,
+      message: notifMsg[status] ?? `Your loan application status has been updated to ${status}.`,
+      data: JSON.stringify({ url: '/my-loans' }),
+    },
+  }).catch(() => {});
+
+  // Push notification
+  userWantsPush(loan.userId, 'wallet').then(wants => {
+    if (wants) sendPushToUser(loan.userId, {
+      title: notifTitle[status] ?? `Loan ${status}`,
+      body: notifMsg[status] ?? `Loan status updated to ${status}`,
+      url: '/my-loans',
+    }).catch(() => {});
+  }).catch(() => {});
+
+  // Email notification
+  sendLoanStatusEmail({
+    recipientEmail: loan.user.email,
+    recipientName: `${loan.user.firstName} ${loan.user.lastName}`,
+    status: status as 'under_review' | 'approved' | 'rejected' | 'disbursed',
+    amount: Number(loan.amount),
+    approvedAmount: approvedAmount ? parseFloat(approvedAmount) : undefined,
+    emiAmount: emiAmount,
+    adminNote: adminNote || undefined,
+  }).catch(() => {});
 
   return sendSuccess(res, updated, `Loan application ${status}`);
 }
