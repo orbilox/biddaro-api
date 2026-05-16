@@ -158,6 +158,17 @@ export async function adminReviewDepositRequest(req: AuthenticatedRequest, res: 
       }),
     ]);
 
+    // In-app notification
+    prisma.notification.create({
+      data: {
+        userId,
+        type: 'deposit_approved',
+        title: 'Deposit Approved',
+        message: `Your deposit of $${depositRequest.amount.toFixed(2)} has been approved and added to your wallet.`,
+        data: JSON.stringify({ url: '/wallet' }),
+      },
+    }).catch(() => {});
+
     // Push notification (non-blocking)
     userWantsPush(userId, 'wallet').then(wants => {
       if (wants) sendPushToUser(userId, {
@@ -183,6 +194,17 @@ export async function adminReviewDepositRequest(req: AuthenticatedRequest, res: 
       where: { id },
       data: { status: 'rejected', adminNote: adminNote || null, reviewedBy, reviewedAt },
     });
+
+    // In-app notification
+    prisma.notification.create({
+      data: {
+        userId,
+        type: 'deposit_rejected',
+        title: 'Deposit Request Declined',
+        message: `Your deposit request of $${depositRequest.amount.toFixed(2)} could not be verified.${adminNote ? ` Reason: ${adminNote}` : ''}`,
+        data: JSON.stringify({ url: '/wallet' }),
+      },
+    }).catch(() => {});
 
     // Push notification (non-blocking)
     userWantsPush(userId, 'wallet').then(wants => {
