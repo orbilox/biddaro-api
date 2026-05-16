@@ -3,6 +3,7 @@ import StripeLib = require('stripe');
 import { Request, Response } from 'express';
 import { prisma } from '../config/database';
 import { sendSuccess, sendError } from '../utils/response';
+import { sendPushToUser, userWantsPush } from '../utils/push';
 import type { AuthenticatedRequest } from '../types';
 
 // Lazily initialise Stripe so missing key during build doesn't crash import
@@ -101,6 +102,27 @@ export async function stripeWebhook(req: Request, res: Response): Promise<void> 
           }),
         ]);
         console.log(`[STRIPE] Credited $${numAmount} to user ${userId}`);
+
+        // In-app notification
+        prisma.notification.create({
+          data: {
+            userId,
+            type: 'deposit_approved',
+            title: 'Card Deposit Successful',
+            message: `$${numAmount.toFixed(2)} has been added to your wallet via card payment.`,
+            data: JSON.stringify({ url: '/wallet' }),
+          },
+        }).catch(() => {});
+
+        // Push notification
+        userWantsPush(userId, 'wallet').then(wants => {
+          if (wants) sendPushToUser(userId, {
+            title: 'Deposit Successful 💳',
+            body: `$${numAmount.toFixed(2)} added to your wallet`,
+            url: '/wallet',
+          }).catch(() => {});
+        }).catch(() => {});
+
       } catch (err) {
         console.error('[STRIPE] Failed to credit wallet:', err);
         res.status(500).json({ error: 'Failed to credit wallet' });
