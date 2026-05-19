@@ -4,8 +4,13 @@ import {
   applyLoan, myLoanApplications, getLoanApplication,
   adminListLoans, adminReviewLoan, adminLoanStats,
 } from '../controllers/loans.controller';
+import { createLoanOrder, applyLoanPaid } from '../controllers/razorpayLoans.controller';
 
 const router = Router();
+
+// ─── India Razorpay fee routes (must be before /:id) ──────────────────────────
+router.post('/india/order', authenticate, createLoanOrder);
+router.post('/india/apply', authenticate, applyLoanPaid);
 
 // ─── User routes ──────────────────────────────────────────────────────────────
 router.post('/', authenticate, applyLoan);
