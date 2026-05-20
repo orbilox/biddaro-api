@@ -560,6 +560,30 @@ model LoanApplication {
   updatedAt        DateTime @updatedAt
 }
 
+model LoanInquiry {
+  id                  String   @id @default(cuid())
+  loanType            String
+  amount              Float
+  purpose             String?
+  employmentType      String?
+  monthlyIncome       Float?
+  firstName           String
+  lastName            String
+  email               String
+  phone               String
+  address             String?
+  city                String?
+  country             String   @default("IN")
+  razorpayPaymentId   String
+  razorpayOrderId     String
+  razorpaySignature   String
+  feePaid             Int      // in paise
+  status              String   @default("new") // new | contacted | converted | closed
+  adminNote           String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
 model BuildCheckItem {
   id        String       @id @default(cuid())
   sectionId String
