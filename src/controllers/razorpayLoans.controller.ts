@@ -12,7 +12,6 @@ function getApplicationFee(loanType: string): number {
 
 // ─── Step 1: Create Razorpay order for the application fee ────────────────────
 export async function createLoanOrder(req: AuthenticatedRequest, res: Response) {
-  const userId = req.user!.userId;
   const { loanType } = req.body;
 
   if (!loanType) return sendError(res, 'loanType is required', 400);
@@ -23,7 +22,7 @@ export async function createLoanOrder(req: AuthenticatedRequest, res: Response) 
     const order = await razorpay.orders.create({
       amount,
       currency: 'INR',
-      receipt: `loan_fee_${userId.slice(0, 8)}_${Date.now()}`,
+      receipt: `loan_fee_${Date.now()}`,
     });
 
     return sendSuccess(res, {

@@ -9,7 +9,7 @@ import { createLoanOrder, applyLoanPaid } from '../controllers/razorpayLoans.con
 const router = Router();
 
 // ─── India Razorpay fee routes (must be before /:id) ──────────────────────────
-router.post('/india/order', authenticate, createLoanOrder);
+router.post('/india/order', createLoanOrder);  // public — no auth needed before payment
 router.post('/india/apply', authenticate, applyLoanPaid);
 
 // ─── User routes ──────────────────────────────────────────────────────────────
