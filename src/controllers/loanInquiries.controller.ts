@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Response } from 'express';
 import { prisma } from '../config/database';
 import { sendSuccess, sendError } from '../utils/response';
+import { capiLead, capiSubscribe } from '../utils/metaCapi';
 import type { AuthenticatedRequest } from '../types';
 
 // ─── Public: submit inquiry right after Razorpay payment / subscription ───────
@@ -81,6 +82,28 @@ export async function submitInquiry(req: AuthenticatedRequest, res: Response) {
       status:            'new',
     },
   });
+
+  // ── Meta Conversions API ──────────────────────────────────────────────────
+  const clientIp        = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+                       || req.socket?.remoteAddress;
+  const clientUserAgent = req.headers['user-agent'];
+  const fbp = req.cookies?.['_fbp'] as string | undefined;
+  const fbc = req.cookies?.['_fbc'] as string | undefined;
+
+  capiLead({
+    email: inquiry.email, phone: inquiry.phone ?? undefined,
+    firstName: inquiry.firstName, lastName: inquiry.lastName,
+    loanType: inquiry.loanType,
+    clientIp, clientUserAgent, fbp, fbc,
+  });
+
+  if (isSubscription) {
+    capiSubscribe({
+      email: inquiry.email, phone: inquiry.phone ?? undefined,
+      firstName: inquiry.firstName, lastName: inquiry.lastName,
+      clientIp, clientUserAgent, fbp, fbc,
+    });
+  }
 
   return sendSuccess(res, { inquiry }, 'Inquiry recorded successfully', 201);
 }

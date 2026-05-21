@@ -6,6 +6,7 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/
 import { sendSuccess, sendCreated, sendError, sendUnauthorized } from '../utils/response';
 import { generateOtp } from '../utils/otp';
 import { sendOtpEmail, sendPasswordResetEmail } from '../utils/email';
+import { capiCompleteRegistration } from '../utils/metaCapi';
 import type { AuthenticatedRequest } from '../types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -247,6 +248,19 @@ export async function verifyOtp(req: Request, res: Response): Promise<void> {
   const accessToken = signAccessToken(payload);
   const refreshToken = signRefreshToken(payload);
   await prisma.user.update({ where: { id: user.id }, data: { refreshToken } });
+
+  // ── Meta Conversions API — CompleteRegistration ──────────────────────────
+  capiCompleteRegistration({
+    email:           user.email,
+    firstName:       user.firstName,
+    lastName:        user.lastName,
+    clientIp:        ((req as Request & { headers: Record<string, string | string[] | undefined> })
+                       .headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+                    || (req as any).socket?.remoteAddress,
+    clientUserAgent: req.headers['user-agent'],
+    fbp: (req as any).cookies?.['_fbp'],
+    fbc: (req as any).cookies?.['_fbc'],
+  });
 
   sendSuccess(res, {
     user: safeUser(user as unknown as Record<string, unknown>),
