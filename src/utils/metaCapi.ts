@@ -110,7 +110,7 @@ export async function sendCapiEvent(event: CapiEvent): Promise<void> {
       },
     ],
     access_token: accessToken,
-    // test_event_code: 'TEST12345',  // Uncomment in Events Manager Test Events tab
+    test_event_code: 'TEST42460',  // Remove after testing
   };
 
   try {
