@@ -4,15 +4,16 @@ import {
   applyLoan, myLoanApplications, getLoanApplication,
   adminListLoans, adminReviewLoan, adminLoanStats,
 } from '../controllers/loans.controller';
-import { createLoanOrder, applyLoanPaid } from '../controllers/razorpayLoans.controller';
+import { createLoanOrder, applyLoanPaid, createSubscription } from '../controllers/razorpayLoans.controller';
 import { submitInquiry, adminListInquiries, adminUpdateInquiry } from '../controllers/loanInquiries.controller';
 
 const router = Router();
 
 // ─── India Razorpay fee routes (must be before /:id) ──────────────────────────
-router.post('/india/order',   createLoanOrder);           // public
-router.post('/india/inquiry', submitInquiry);             // public — save lead immediately after payment
-router.post('/india/apply',   authenticate, applyLoanPaid);
+router.post('/india/order',        createLoanOrder);           // public
+router.post('/india/subscription', createSubscription);        // public
+router.post('/india/inquiry',      submitInquiry);             // public — save lead immediately after payment
+router.post('/india/apply',        authenticate, applyLoanPaid);
 
 // ─── Admin inquiry routes ──────────────────────────────────────────────────────
 router.get('/admin/inquiries',        authenticate, requireRole('admin'), adminListInquiries);

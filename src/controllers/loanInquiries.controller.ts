@@ -4,31 +4,43 @@ import { prisma } from '../config/database';
 import { sendSuccess, sendError } from '../utils/response';
 import type { AuthenticatedRequest } from '../types';
 
-// ─── Public: submit inquiry right after Razorpay payment ─────────────────────
+// ─── Public: submit inquiry right after Razorpay payment / subscription ───────
 export async function submitInquiry(req: AuthenticatedRequest, res: Response) {
   const {
-    // Payment proof
+    // Payment proof — order-based (one-time)
     razorpay_payment_id,
     razorpay_order_id,
     razorpay_signature,
+    // Subscription-based fields
+    razorpaySubscriptionId,
+    razorpayPlanId,
     // Form fields
     loanType, amount, purpose, employmentType, monthlyIncome,
     firstName, lastName, email, phone, address, city,
     feePaid,
   } = req.body;
 
-  // ── Signature verification ────────────────────────────────────────────────
-  if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
-    return sendError(res, 'Missing payment verification fields', 400);
-  }
+  const isSubscription = !!razorpaySubscriptionId;
 
-  const expectedSig = crypto
-    .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
-    .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-    .digest('hex');
+  if (isSubscription) {
+    // ── Subscription flow: require payment_id and subscription_id ───────────
+    if (!razorpay_payment_id || !razorpaySubscriptionId) {
+      return sendError(res, 'Missing subscription payment fields', 400);
+    }
+  } else {
+    // ── Order flow: full HMAC verification ──────────────────────────────────
+    if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+      return sendError(res, 'Missing payment verification fields', 400);
+    }
 
-  if (expectedSig !== razorpay_signature) {
-    return sendError(res, 'Payment verification failed', 400);
+    const expectedSig = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
+
+    if (expectedSig !== razorpay_signature) {
+      return sendError(res, 'Payment verification failed', 400);
+    }
   }
 
   // ── Required fields ───────────────────────────────────────────────────────
@@ -48,22 +60,25 @@ export async function submitInquiry(req: AuthenticatedRequest, res: Response) {
   const inquiry = await prisma.loanInquiry.create({
     data: {
       loanType,
-      amount:        parseFloat(amount),
-      purpose:       purpose || null,
-      employmentType: employmentType || null,
-      monthlyIncome: monthlyIncome ? parseFloat(monthlyIncome) : null,
+      amount:            parseFloat(amount),
+      purpose:           purpose       || null,
+      employmentType:    employmentType || null,
+      monthlyIncome:     monthlyIncome ? parseFloat(monthlyIncome) : null,
       firstName,
       lastName,
       email,
       phone,
-      address:       address || null,
-      city:          city    || null,
-      country:       'IN',
+      address:           address || null,
+      city:              city    || null,
+      country:           'IN',
       razorpayPaymentId: razorpay_payment_id,
-      razorpayOrderId:   razorpay_order_id,
-      razorpaySignature: razorpay_signature,
-      feePaid:       feePaid ? parseInt(feePaid) : 5000,
-      status:        'new',
+      razorpayOrderId:   razorpay_order_id   || null,
+      razorpaySignature: razorpay_signature   || null,
+      razorpaySubscriptionId: razorpaySubscriptionId || null,
+      razorpayPlanId:         razorpayPlanId         || null,
+      subscriptionStatus:     isSubscription ? 'authenticated' : null,
+      feePaid:           isSubscription ? 0 : (feePaid ? parseInt(feePaid) : 5000),
+      status:            'new',
     },
   });
 

@@ -574,11 +574,14 @@ model LoanInquiry {
   address             String?
   city                String?
   country             String   @default("IN")
-  razorpayPaymentId   String
-  razorpayOrderId     String
-  razorpaySignature   String
-  feePaid             Int      // in paise
-  status              String   @default("new") // new | contacted | converted | closed
+  razorpayPaymentId       String?
+  razorpayOrderId         String?
+  razorpaySignature       String?
+  razorpaySubscriptionId  String?
+  razorpayPlanId          String?
+  subscriptionStatus      String?  // authenticated | active | halted | cancelled
+  feePaid                 Int      @default(0)  // in paise; 0 for subscription flow
+  status                  String   @default("new") // new | contacted | converted | closed
   adminNote           String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt

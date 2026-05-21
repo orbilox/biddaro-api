@@ -37,6 +37,37 @@ export async function createLoanOrder(req: AuthenticatedRequest, res: Response) 
   }
 }
 
+// ─── Subscription: Create Razorpay plan + subscription for ₹100/month ─────────
+export async function createSubscription(req: AuthenticatedRequest, res: Response) {
+  const { loanType } = req.body;
+  if (!loanType) return sendError(res, 'loanType is required', 400);
+
+  try {
+    const plan = await (razorpay.plans as any).create({
+      item: { name: 'Biddaro Loan Eligibility', amount: 10000, currency: 'INR', unit: 'month' },
+      period:   'monthly',
+      interval: 1,
+      notes:    { loanType },
+    });
+
+    const subscription = await (razorpay.subscriptions as any).create({
+      plan_id:         plan.id,
+      total_count:     120,    // 10 years — effectively ongoing
+      customer_notify: 1,
+      notes:           { loanType },
+    });
+
+    return sendSuccess(res, {
+      subscriptionId: subscription.id,
+      planId:         plan.id,
+      key:            process.env.RAZORPAY_KEY_ID,
+    });
+  } catch (err: any) {
+    console.error('[Razorpay] createSubscription error:', err?.error || err);
+    return sendError(res, 'Failed to create subscription', 500);
+  }
+}
+
 // ─── Step 2: Verify payment + submit loan application ─────────────────────────
 export async function applyLoanPaid(req: AuthenticatedRequest, res: Response) {
   const userId = req.user!.userId;
