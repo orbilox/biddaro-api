@@ -252,8 +252,11 @@ export async function verifyOtp(req: Request, res: Response): Promise<void> {
   // ── Meta Conversions API — CompleteRegistration ──────────────────────────
   capiCompleteRegistration({
     email:           user.email,
+    phone:           (user as any).phone ?? undefined,
     firstName:       user.firstName,
     lastName:        user.lastName,
+    externalId:      user.id,           // hashed by CAPI util → external_id
+    country:         (user as any).country ?? 'IN',
     clientIp:        ((req as Request & { headers: Record<string, string | string[] | undefined> })
                        .headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
                     || (req as any).socket?.remoteAddress,

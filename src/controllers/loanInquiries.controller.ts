@@ -91,8 +91,12 @@ export async function submitInquiry(req: AuthenticatedRequest, res: Response) {
   const fbc = req.cookies?.['_fbc'] as string | undefined;
 
   const capiBase = {
-    email: inquiry.email, phone: inquiry.phone ?? undefined,
-    firstName: inquiry.firstName, lastName: inquiry.lastName,
+    email:       inquiry.email,
+    phone:       inquiry.phone       ?? undefined,
+    firstName:   inquiry.firstName,
+    lastName:    inquiry.lastName,
+    city:        inquiry.city        ?? undefined,
+    country:     'IN',
     clientIp, clientUserAgent, fbp, fbc,
   };
 
@@ -101,8 +105,9 @@ export async function submitInquiry(req: AuthenticatedRequest, res: Response) {
     sourceUrl: 'https://biddaro.com/loan-apply' });
 
   if (isSubscription) {
-    capiSubscribe(capiBase);
-    capiPurchase({ ...capiBase, value: 100, currency: 'INR',
+    const subId = inquiry.razorpaySubscriptionId ?? undefined;
+    capiSubscribe({ ...capiBase, subscriptionId: subId });
+    capiPurchase({ ...capiBase, subscriptionId: subId, value: 100, currency: 'INR',
       contentName: inquiry.loanType, sourceUrl: 'https://biddaro.com/loan-apply' });
   }
 
