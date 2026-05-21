@@ -176,6 +176,119 @@ export function capiSubscribe(opts: {
   }).catch(() => {});
 }
 
+/** Fire when user initiates payment / opens Razorpay modal (order or subscription created). */
+export function capiAddPaymentInfo(opts: {
+  email?: string;
+  phone?: string;
+  firstName?: string;
+  lastName?: string;
+  value?: number;
+  currency?: string;
+  contentCategory?: string;
+  clientIp?: string;
+  clientUserAgent?: string;
+  fbp?: string;
+  fbc?: string;
+  sourceUrl?: string;
+}): void {
+  sendCapiEvent({
+    eventName:      'AddPaymentInfo',
+    eventSourceUrl: opts.sourceUrl ?? 'https://biddaro.com/loan-apply',
+    userData: {
+      email: opts.email, phone: opts.phone,
+      firstName: opts.firstName, lastName: opts.lastName,
+      clientIp: opts.clientIp, clientUserAgent: opts.clientUserAgent,
+      fbp: opts.fbp, fbc: opts.fbc,
+    },
+    customData: {
+      currency:         opts.currency ?? 'INR',
+      value:            opts.value ?? 100,
+      content_category: opts.contentCategory,
+    },
+  }).catch(() => {});
+}
+
+/** Fire when a payment is fully confirmed (loan fee paid, wallet deposit, subscription charged). */
+export function capiPurchase(opts: {
+  email?: string;
+  phone?: string;
+  firstName?: string;
+  lastName?: string;
+  value: number;
+  currency?: string;
+  contentName?: string;
+  orderId?: string;
+  clientIp?: string;
+  clientUserAgent?: string;
+  fbp?: string;
+  fbc?: string;
+  sourceUrl?: string;
+}): void {
+  sendCapiEvent({
+    eventName:      'Purchase',
+    eventSourceUrl: opts.sourceUrl ?? 'https://biddaro.com',
+    userData: {
+      email: opts.email, phone: opts.phone,
+      firstName: opts.firstName, lastName: opts.lastName,
+      clientIp: opts.clientIp, clientUserAgent: opts.clientUserAgent,
+      fbp: opts.fbp, fbc: opts.fbc,
+    },
+    customData: {
+      currency:     opts.currency ?? 'INR',
+      value:        opts.value,
+      content_name: opts.contentName,
+      order_id:     opts.orderId,
+    },
+  }).catch(() => {});
+}
+
+/** Fire when an application / bid / loan form is submitted. */
+export function capiSubmitApplication(opts: {
+  email?: string;
+  phone?: string;
+  firstName?: string;
+  lastName?: string;
+  contentCategory?: string;
+  clientIp?: string;
+  clientUserAgent?: string;
+  fbp?: string;
+  fbc?: string;
+  sourceUrl?: string;
+}): void {
+  sendCapiEvent({
+    eventName:      'SubmitApplication',
+    eventSourceUrl: opts.sourceUrl ?? 'https://biddaro.com',
+    userData: {
+      email: opts.email, phone: opts.phone,
+      firstName: opts.firstName, lastName: opts.lastName,
+      clientIp: opts.clientIp, clientUserAgent: opts.clientUserAgent,
+      fbp: opts.fbp, fbc: opts.fbc,
+    },
+    customData: opts.contentCategory ? { content_category: opts.contentCategory } : undefined,
+  }).catch(() => {});
+}
+
+/** Fire when the contact form is submitted. */
+export function capiContact(opts: {
+  email?: string;
+  phone?: string;
+  firstName?: string;
+  clientIp?: string;
+  clientUserAgent?: string;
+  fbp?: string;
+  fbc?: string;
+}): void {
+  sendCapiEvent({
+    eventName:      'Contact',
+    eventSourceUrl: 'https://biddaro.com/contact',
+    userData: {
+      email: opts.email, phone: opts.phone, firstName: opts.firstName,
+      clientIp: opts.clientIp, clientUserAgent: opts.clientUserAgent,
+      fbp: opts.fbp, fbc: opts.fbc,
+    },
+  }).catch(() => {});
+}
+
 /** Fire when a user completes email OTP verification (registration complete). */
 export function capiCompleteRegistration(opts: {
   email: string;

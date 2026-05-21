@@ -3,7 +3,18 @@ import { Response } from 'express';
 import { prisma } from '../config/database';
 import { razorpay } from '../utils/razorpay';
 import { sendSuccess, sendError } from '../utils/response';
+import { capiAddPaymentInfo, capiPurchase, capiSubmitApplication } from '../utils/metaCapi';
 import type { AuthenticatedRequest } from '../types';
+
+// ─── Shared helper: extract browser signals from request ─────────────────────
+function browserSignals(req: AuthenticatedRequest) {
+  return {
+    clientIp:        ((req.headers['x-forwarded-for'] as string) ?? '').split(',')[0]?.trim() || (req.socket as any)?.remoteAddress,
+    clientUserAgent: req.headers['user-agent'] as string | undefined,
+    fbp:             (req as any).cookies?.['_fbp'] as string | undefined,
+    fbc:             (req as any).cookies?.['_fbc'] as string | undefined,
+  };
+}
 
 // Fee in paise: ₹50 = 5000, ₹100 = 10000
 function getApplicationFee(loanType: string): number {
@@ -23,6 +34,13 @@ export async function createLoanOrder(req: AuthenticatedRequest, res: Response) 
       amount,
       currency: 'INR',
       receipt: `loan_fee_${Date.now()}`,
+    });
+
+    // ── Meta CAPI: user opened payment modal ────────────────────────────────
+    capiAddPaymentInfo({
+      ...browserSignals(req),
+      value: amount / 100, currency: 'INR', contentCategory: loanType,
+      sourceUrl: 'https://biddaro.com/loan-apply',
     });
 
     return sendSuccess(res, {
@@ -55,6 +73,13 @@ export async function createSubscription(req: AuthenticatedRequest, res: Respons
       total_count:     120,    // 10 years — effectively ongoing
       customer_notify: 1,
       notes:           { loanType },
+    });
+
+    // ── Meta CAPI: user opened subscription modal ────────────────────────────
+    capiAddPaymentInfo({
+      ...browserSignals(req),
+      value: 100, currency: 'INR', contentCategory: loanType,
+      sourceUrl: 'https://biddaro.com/loan-apply',
     });
 
     return sendSuccess(res, {
@@ -125,6 +150,15 @@ export async function applyLoanPaid(req: AuthenticatedRequest, res: Response) {
       status:         'pending',
     },
   });
+
+  // ── Meta CAPI: payment confirmed + application submitted ───────────────────
+  const sig = browserSignals(req);
+  const feeInRupees = getApplicationFee(loanType) / 100;
+  capiPurchase({ email, phone, firstName, lastName, value: feeInRupees, currency: 'INR',
+    contentName: loanType, orderId: razorpay_order_id, ...sig,
+    sourceUrl: 'https://biddaro.com/loan-apply' });
+  capiSubmitApplication({ email, phone, firstName, lastName,
+    contentCategory: loanType, ...sig, sourceUrl: 'https://biddaro.com/loan-apply' });
 
   return sendSuccess(
     res,

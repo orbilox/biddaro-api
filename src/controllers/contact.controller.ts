@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { capiContact } from '../utils/metaCapi';
 
 function sendSuccess(res: Response, data: unknown, message = 'Success') {
   res.json({ success: true, message, data });
@@ -147,6 +148,16 @@ export async function submitContact(req: Request, res: Response): Promise<void> 
     console.error('[CONTACT] Email send failed:', err);
     // Still succeed — message is not lost, just email delivery failed
   }
+
+  // ── Meta CAPI: Contact event ────────────────────────────────────────────
+  capiContact({
+    email, phone: undefined, firstName: name,
+    clientIp: ((req.headers['x-forwarded-for'] as string) ?? '').split(',')[0]?.trim()
+             || (req.socket as any)?.remoteAddress,
+    clientUserAgent: req.headers['user-agent'] as string,
+    fbp: (req as any).cookies?.['_fbp'],
+    fbc: (req as any).cookies?.['_fbc'],
+  });
 
   sendSuccess(res, null, 'Message received! We\'ll get back to you within 24 hours.');
 }

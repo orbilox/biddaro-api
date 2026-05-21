@@ -3,6 +3,7 @@ import { prisma } from '../config/database';
 import { sendSuccess, sendError, sendNotFound } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
 import { sendPushToUser, userWantsPush } from '../utils/push';
+import { capiAddPaymentInfo, capiPurchase } from '../utils/metaCapi';
 import type { AuthenticatedRequest } from '../types';
 
 // ─── Get wallet ───────────────────────────────────────────────────────────────
@@ -66,6 +67,16 @@ export async function deposit(req: AuthenticatedRequest, res: Response): Promise
       update: { balance: { increment: numAmount } },
     }),
   ]);
+
+  // ── Meta CAPI: deposit = purchase ────────────────────────────────────────
+  const clientIp = ((req.headers['x-forwarded-for'] as string) ?? '').split(',')[0]?.trim()
+                 || (req.socket as any)?.remoteAddress;
+  capiPurchase({
+    value: numAmount, currency: 'INR', contentName: 'wallet_deposit',
+    clientIp, clientUserAgent: req.headers['user-agent'] as string,
+    fbp: (req as any).cookies?.['_fbp'], fbc: (req as any).cookies?.['_fbc'],
+    sourceUrl: 'https://biddaro.com/wallet',
+  });
 
   // Push notification for deposit confirmation
   userWantsPush(userId, 'wallet').then(wants => {
