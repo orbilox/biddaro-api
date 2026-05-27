@@ -21,7 +21,7 @@ async function getOwnedSite(siteId: string, userId: string) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export async function listSites(req: AuthenticatedRequest, res: Response): Promise<void> {
-  const { page, limit, skip } = getPagination(req.query);
+  const { page, limit, skip } = getPagination(req as any);
   const userId = req.user!.userId;
 
   const [sites, total] = await Promise.all([
