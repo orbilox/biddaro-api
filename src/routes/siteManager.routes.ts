@@ -22,6 +22,22 @@ import {
   listInvoices, createInvoice, updateInvoice, deleteInvoice,
   // Subcontractors
   listSubcontractors, addSubcontractor, updateSubcontractor, deleteSubcontractor,
+  // Milestones
+  listMilestones, addMilestone, updateMilestone, deleteMilestone,
+  // Leads
+  listLeads, addLead, updateLead, deleteLead,
+  // Designs
+  listDesigns, addDesign, updateDesign, deleteDesign,
+  // Quality
+  listQualityChecks, addQualityCheck, updateQualityCheck, deleteQualityCheck,
+  // Procurement
+  listProcurements, createProcurement, updateProcurement, deleteProcurement,
+  // Vendor Bills
+  listVendorBills, addVendorBill, updateVendorBill, deleteVendorBill,
+  // Production
+  listProductions, addProduction, updateProduction, deleteProduction,
+  // P&L
+  getPnL,
 } from '../controllers/siteManager.controller';
 
 const router = Router();
@@ -89,5 +105,50 @@ router.get('/sites/:siteId/subcontractors',           listSubcontractors);
 router.post('/sites/:siteId/subcontractors',          addSubcontractor);
 router.put('/sites/:siteId/subcontractors/:subId',    updateSubcontractor);
 router.delete('/sites/:siteId/subcontractors/:subId', deleteSubcontractor);
+
+// ─── Milestones (Planning) ───────────────────────────────────────────────────
+router.get('/sites/:siteId/milestones',          listMilestones);
+router.post('/sites/:siteId/milestones',         addMilestone);
+router.put('/sites/:siteId/milestones/:id',      updateMilestone);
+router.delete('/sites/:siteId/milestones/:id',   deleteMilestone);
+
+// ─── Leads (Sales) ───────────────────────────────────────────────────────────
+router.get('/sites/:siteId/leads',         listLeads);
+router.post('/sites/:siteId/leads',        addLead);
+router.put('/sites/:siteId/leads/:id',     updateLead);
+router.delete('/sites/:siteId/leads/:id',  deleteLead);
+
+// ─── Designs ─────────────────────────────────────────────────────────────────
+router.get('/sites/:siteId/designs',         listDesigns);
+router.post('/sites/:siteId/designs',        addDesign);
+router.put('/sites/:siteId/designs/:id',     updateDesign);
+router.delete('/sites/:siteId/designs/:id',  deleteDesign);
+
+// ─── Quality ─────────────────────────────────────────────────────────────────
+router.get('/sites/:siteId/quality',         listQualityChecks);
+router.post('/sites/:siteId/quality',        addQualityCheck);
+router.put('/sites/:siteId/quality/:id',     updateQualityCheck);
+router.delete('/sites/:siteId/quality/:id',  deleteQualityCheck);
+
+// ─── Procurement ─────────────────────────────────────────────────────────────
+router.get('/sites/:siteId/procurement',         listProcurements);
+router.post('/sites/:siteId/procurement',        createProcurement);
+router.put('/sites/:siteId/procurement/:id',     updateProcurement);
+router.delete('/sites/:siteId/procurement/:id',  deleteProcurement);
+
+// ─── Vendor Bills ─────────────────────────────────────────────────────────────
+router.get('/sites/:siteId/vendor-bills',         listVendorBills);
+router.post('/sites/:siteId/vendor-bills',        addVendorBill);
+router.put('/sites/:siteId/vendor-bills/:id',     updateVendorBill);
+router.delete('/sites/:siteId/vendor-bills/:id',  deleteVendorBill);
+
+// ─── Production Tasks ────────────────────────────────────────────────────────
+router.get('/sites/:siteId/production',         listProductions);
+router.post('/sites/:siteId/production',        addProduction);
+router.put('/sites/:siteId/production/:id',     updateProduction);
+router.delete('/sites/:siteId/production/:id',  deleteProduction);
+
+// ─── P&L ─────────────────────────────────────────────────────────────────────
+router.get('/sites/:siteId/pnl', getPnL);
 
 export default router;

@@ -907,3 +907,569 @@ export async function deleteSubcontractor(req: AuthenticatedRequest, res: Respon
   await prisma.siteSubcontractor.delete({ where: { id: subId } });
   sendSuccess(res, null, 'Subcontractor removed');
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MILESTONES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listMilestones(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const milestones = await prisma.siteMilestone.findMany({
+    where: { siteId },
+    orderBy: { dueDate: 'asc' },
+  });
+  sendSuccess(res, milestones);
+}
+
+export async function addMilestone(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const { title, description, category, dueDate, status, priority, assignedTo, progress } = req.body;
+  if (!title) { sendError(res, 'title is required', 400); return; }
+
+  const milestone = await prisma.siteMilestone.create({
+    data: {
+      siteId, title, description,
+      category: category || 'construction',
+      dueDate: dueDate ? new Date(dueDate) : null,
+      status: status || 'pending',
+      priority: priority || 'medium',
+      assignedTo,
+      progress: progress ? parseFloat(progress) : 0,
+    },
+  });
+  sendSuccess(res, milestone, 'Milestone added');
+}
+
+export async function updateMilestone(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const milestone = await prisma.siteMilestone.findFirst({ where: { id, siteId } });
+  if (!milestone) { sendNotFound(res, 'Milestone'); return; }
+
+  const data: Record<string, unknown> = {};
+  const strFields = ['title', 'description', 'category', 'status', 'priority', 'assignedTo'];
+  for (const f of strFields) {
+    if (req.body[f] !== undefined) data[f] = req.body[f];
+  }
+  if (req.body.progress !== undefined) data.progress = parseFloat(req.body.progress);
+  if (req.body.dueDate !== undefined) data.dueDate = req.body.dueDate ? new Date(req.body.dueDate) : null;
+  if (req.body.status === 'completed' && !milestone.completedAt) data.completedAt = new Date();
+
+  const updated = await prisma.siteMilestone.update({ where: { id }, data });
+  sendSuccess(res, updated);
+}
+
+export async function deleteMilestone(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  await prisma.siteMilestone.delete({ where: { id } });
+  sendSuccess(res, null, 'Milestone deleted');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LEADS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listLeads(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const leads = await prisma.siteLead.findMany({
+    where: { siteId },
+    orderBy: { createdAt: 'desc' },
+  });
+  sendSuccess(res, leads);
+}
+
+export async function addLead(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const { clientName, clientPhone, clientEmail, company, projectType, estimatedValue, currency, status, source, notes, followUpDate } = req.body;
+  if (!clientName) { sendError(res, 'clientName is required', 400); return; }
+
+  const lead = await prisma.siteLead.create({
+    data: {
+      siteId, clientName, clientPhone, clientEmail, company, projectType,
+      estimatedValue: estimatedValue ? parseFloat(estimatedValue) : 0,
+      currency: currency || 'INR',
+      status: status || 'lead',
+      source, notes,
+      followUpDate: followUpDate ? new Date(followUpDate) : null,
+    },
+  });
+  sendSuccess(res, lead, 'Lead added');
+}
+
+export async function updateLead(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const lead = await prisma.siteLead.findFirst({ where: { id, siteId } });
+  if (!lead) { sendNotFound(res, 'Lead'); return; }
+
+  const data: Record<string, unknown> = {};
+  const strFields = ['clientName', 'clientPhone', 'clientEmail', 'company', 'projectType', 'currency', 'status', 'source', 'notes'];
+  for (const f of strFields) {
+    if (req.body[f] !== undefined) data[f] = req.body[f];
+  }
+  if (req.body.estimatedValue !== undefined) data.estimatedValue = parseFloat(req.body.estimatedValue);
+  if (req.body.followUpDate !== undefined) data.followUpDate = req.body.followUpDate ? new Date(req.body.followUpDate) : null;
+  if ((req.body.status === 'won' || req.body.status === 'lost') && !lead.closedAt) data.closedAt = new Date();
+
+  const updated = await prisma.siteLead.update({ where: { id }, data });
+  sendSuccess(res, updated);
+}
+
+export async function deleteLead(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  await prisma.siteLead.delete({ where: { id } });
+  sendSuccess(res, null, 'Lead deleted');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DESIGNS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listDesigns(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const designs = await prisma.designDocument.findMany({
+    where: { siteId },
+    orderBy: { createdAt: 'desc' },
+  });
+  sendSuccess(res, designs);
+}
+
+export async function addDesign(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const { title, type, version, status, fileUrl, preparedBy, checkedBy, approvedBy, notes } = req.body;
+  if (!title) { sendError(res, 'title is required', 400); return; }
+
+  const design = await prisma.designDocument.create({
+    data: {
+      siteId, title,
+      type: type || 'architectural',
+      version: version || 'v1.0',
+      status: status || 'draft',
+      fileUrl, preparedBy, checkedBy, approvedBy, notes,
+    },
+  });
+  sendSuccess(res, design, 'Design document added');
+}
+
+export async function updateDesign(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const design = await prisma.designDocument.findFirst({ where: { id, siteId } });
+  if (!design) { sendNotFound(res, 'Design document'); return; }
+
+  const data: Record<string, unknown> = {};
+  const strFields = ['title', 'type', 'version', 'status', 'fileUrl', 'preparedBy', 'checkedBy', 'approvedBy', 'notes', 'revisionNotes'];
+  for (const f of strFields) {
+    if (req.body[f] !== undefined) data[f] = req.body[f];
+  }
+  if (req.body.status === 'approved' && !design.approvedAt) data.approvedAt = new Date();
+
+  const updated = await prisma.designDocument.update({ where: { id }, data });
+  sendSuccess(res, updated);
+}
+
+export async function deleteDesign(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  await prisma.designDocument.delete({ where: { id } });
+  sendSuccess(res, null, 'Design document deleted');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// QUALITY CHECKS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listQualityChecks(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const checks = await prisma.qualityCheck.findMany({
+    where: { siteId },
+    orderBy: { checkDate: 'desc' },
+    include: { items: true },
+  });
+  sendSuccess(res, checks);
+}
+
+export async function addQualityCheck(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const { title, category, checkDate, status, inspector, location, findings, remarks, items } = req.body;
+  if (!title) { sendError(res, 'title is required', 400); return; }
+
+  const check = await prisma.qualityCheck.create({
+    data: {
+      siteId, title,
+      category: category || 'structural',
+      checkDate: checkDate ? new Date(checkDate) : new Date(),
+      status: status || 'pending',
+      inspector, location, findings, remarks,
+    },
+  });
+
+  if (items && Array.isArray(items) && items.length > 0) {
+    await prisma.qualityItem.createMany({
+      data: items.map((item: { description: string; status?: string; remarks?: string }) => ({
+        checkId: check.id,
+        description: item.description,
+        status: item.status || 'pending',
+        remarks: item.remarks,
+      })),
+    });
+  }
+
+  const full = await prisma.qualityCheck.findUnique({ where: { id: check.id }, include: { items: true } });
+  sendSuccess(res, full, 'Quality check added');
+}
+
+export async function updateQualityCheck(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const check = await prisma.qualityCheck.findFirst({ where: { id, siteId } });
+  if (!check) { sendNotFound(res, 'Quality check'); return; }
+
+  const data: Record<string, unknown> = {};
+  const strFields = ['title', 'category', 'status', 'inspector', 'location', 'findings', 'remarks'];
+  for (const f of strFields) {
+    if (req.body[f] !== undefined) data[f] = req.body[f];
+  }
+  if (req.body.checkDate !== undefined) data.checkDate = req.body.checkDate ? new Date(req.body.checkDate) : new Date();
+  if (req.body.status === 'passed' && !check.resolvedAt) data.resolvedAt = new Date();
+
+  await prisma.qualityCheck.update({ where: { id }, data });
+
+  if (req.body.items !== undefined && Array.isArray(req.body.items)) {
+    await prisma.qualityItem.deleteMany({ where: { checkId: id } });
+    if (req.body.items.length > 0) {
+      await prisma.qualityItem.createMany({
+        data: req.body.items.map((item: { description: string; status?: string; remarks?: string }) => ({
+          checkId: id,
+          description: item.description,
+          status: item.status || 'pending',
+          remarks: item.remarks,
+        })),
+      });
+    }
+  }
+
+  const full = await prisma.qualityCheck.findUnique({ where: { id }, include: { items: true } });
+  sendSuccess(res, full);
+}
+
+export async function deleteQualityCheck(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  await prisma.qualityCheck.delete({ where: { id } });
+  sendSuccess(res, null, 'Quality check deleted');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROCUREMENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listProcurements(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const orders = await prisma.procurementOrder.findMany({
+    where: { siteId },
+    orderBy: { createdAt: 'desc' },
+  });
+  sendSuccess(res, orders);
+}
+
+export async function createProcurement(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const { vendor, totalAmount, poNumber, vendorPhone, vendorEmail, category, items, subtotal, taxAmount, currency, expectedDate, notes } = req.body;
+  if (!vendor || !totalAmount) { sendError(res, 'vendor and totalAmount are required', 400); return; }
+
+  const order = await prisma.procurementOrder.create({
+    data: {
+      siteId,
+      poNumber: poNumber || `PO-${Date.now()}`,
+      vendor, vendorPhone, vendorEmail,
+      category: category || 'material',
+      items: typeof items === 'string' ? items : JSON.stringify(items || []),
+      subtotal: subtotal ? parseFloat(subtotal) : 0,
+      taxAmount: taxAmount ? parseFloat(taxAmount) : 0,
+      totalAmount: parseFloat(totalAmount),
+      currency: currency || 'INR',
+      expectedDate: expectedDate ? new Date(expectedDate) : null,
+      notes,
+    },
+  });
+  sendSuccess(res, order, 'Procurement order created');
+}
+
+export async function updateProcurement(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const order = await prisma.procurementOrder.findFirst({ where: { id, siteId } });
+  if (!order) { sendNotFound(res, 'Procurement order'); return; }
+
+  const data: Record<string, unknown> = {};
+  const strFields = ['poNumber', 'vendor', 'vendorPhone', 'vendorEmail', 'category', 'currency', 'status', 'notes'];
+  const numFields = ['subtotal', 'taxAmount', 'totalAmount'];
+  for (const f of [...strFields, ...numFields]) {
+    if (req.body[f] !== undefined) {
+      data[f] = numFields.includes(f) ? parseFloat(req.body[f]) : req.body[f];
+    }
+  }
+  if (req.body.items !== undefined) data.items = typeof req.body.items === 'string' ? req.body.items : JSON.stringify(req.body.items);
+  if (req.body.expectedDate !== undefined) data.expectedDate = req.body.expectedDate ? new Date(req.body.expectedDate) : null;
+  if (req.body.deliveredDate !== undefined) data.deliveredDate = req.body.deliveredDate ? new Date(req.body.deliveredDate) : null;
+
+  const updated = await prisma.procurementOrder.update({ where: { id }, data });
+  sendSuccess(res, updated);
+}
+
+export async function deleteProcurement(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  await prisma.procurementOrder.delete({ where: { id } });
+  sendSuccess(res, null, 'Procurement order deleted');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VENDOR BILLS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listVendorBills(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const bills = await prisma.vendorBill.findMany({
+    where: { siteId },
+    orderBy: { billDate: 'desc' },
+    include: { po: { select: { poNumber: true } } },
+  });
+  sendSuccess(res, bills);
+}
+
+export async function addVendorBill(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const { vendor, totalAmount, billNumber, poId, category, description, amount, taxAmount, currency, billDate, dueDate, status, paymentMethod, notes } = req.body;
+  if (!vendor || !totalAmount) { sendError(res, 'vendor and totalAmount are required', 400); return; }
+
+  const bill = await prisma.vendorBill.create({
+    data: {
+      siteId, vendor,
+      billNumber: billNumber || null,
+      poId: poId || null,
+      category: category || 'material',
+      description,
+      amount: amount ? parseFloat(amount) : 0,
+      taxAmount: taxAmount ? parseFloat(taxAmount) : 0,
+      totalAmount: parseFloat(totalAmount),
+      currency: currency || 'INR',
+      billDate: billDate ? new Date(billDate) : new Date(),
+      dueDate: dueDate ? new Date(dueDate) : null,
+      status: status || 'pending',
+      paymentMethod, notes,
+    },
+  });
+  sendSuccess(res, bill, 'Vendor bill added');
+}
+
+export async function updateVendorBill(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const bill = await prisma.vendorBill.findFirst({ where: { id, siteId } });
+  if (!bill) { sendNotFound(res, 'Vendor bill'); return; }
+
+  const data: Record<string, unknown> = {};
+  const strFields = ['billNumber', 'vendor', 'poId', 'category', 'description', 'currency', 'status', 'paymentMethod', 'notes'];
+  const numFields = ['amount', 'taxAmount', 'totalAmount'];
+  for (const f of [...strFields, ...numFields]) {
+    if (req.body[f] !== undefined) {
+      data[f] = numFields.includes(f) ? parseFloat(req.body[f]) : req.body[f];
+    }
+  }
+  if (req.body.billDate !== undefined) data.billDate = req.body.billDate ? new Date(req.body.billDate) : new Date();
+  if (req.body.dueDate !== undefined) data.dueDate = req.body.dueDate ? new Date(req.body.dueDate) : null;
+  if (req.body.paidDate !== undefined) data.paidDate = req.body.paidDate ? new Date(req.body.paidDate) : null;
+  if (req.body.status === 'paid' && !bill.paidDate) data.paidDate = new Date();
+
+  const updated = await prisma.vendorBill.update({ where: { id }, data });
+  sendSuccess(res, updated);
+}
+
+export async function deleteVendorBill(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  await prisma.vendorBill.delete({ where: { id } });
+  sendSuccess(res, null, 'Vendor bill deleted');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRODUCTION TASKS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listProductions(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const tasks = await prisma.productionTask.findMany({
+    where: { siteId },
+    orderBy: { createdAt: 'desc' },
+  });
+  sendSuccess(res, tasks);
+}
+
+export async function addProduction(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const { title, description, category, location, assignedTo, startDate, endDate, status, priority, progress, unit, plannedQty, completedQty, notes } = req.body;
+  if (!title) { sendError(res, 'title is required', 400); return; }
+
+  const task = await prisma.productionTask.create({
+    data: {
+      siteId, title, description,
+      category: category || 'civil',
+      location, assignedTo,
+      startDate: startDate ? new Date(startDate) : null,
+      endDate: endDate ? new Date(endDate) : null,
+      status: status || 'pending',
+      priority: priority || 'medium',
+      progress: progress ? parseFloat(progress) : 0,
+      unit,
+      plannedQty: plannedQty ? parseFloat(plannedQty) : null,
+      completedQty: completedQty ? parseFloat(completedQty) : 0,
+      notes,
+    },
+  });
+  sendSuccess(res, task, 'Production task added');
+}
+
+export async function updateProduction(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const task = await prisma.productionTask.findFirst({ where: { id, siteId } });
+  if (!task) { sendNotFound(res, 'Production task'); return; }
+
+  const data: Record<string, unknown> = {};
+  const strFields = ['title', 'description', 'category', 'location', 'assignedTo', 'status', 'priority', 'unit', 'notes'];
+  const numFields = ['progress', 'plannedQty', 'completedQty'];
+  for (const f of [...strFields, ...numFields]) {
+    if (req.body[f] !== undefined) {
+      data[f] = numFields.includes(f) ? parseFloat(req.body[f]) : req.body[f];
+    }
+  }
+  if (req.body.startDate !== undefined) data.startDate = req.body.startDate ? new Date(req.body.startDate) : null;
+  if (req.body.endDate !== undefined) data.endDate = req.body.endDate ? new Date(req.body.endDate) : null;
+  if (req.body.status === 'completed' && !task.completedAt) data.completedAt = new Date();
+
+  const updated = await prisma.productionTask.update({ where: { id }, data });
+  sendSuccess(res, updated);
+}
+
+export async function deleteProduction(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  await prisma.productionTask.delete({ where: { id } });
+  sendSuccess(res, null, 'Production task deleted');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// P&L SUMMARY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function getPnL(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  if (!await getOwnedSite(siteId, userId)) { sendNotFound(res, 'Site'); return; }
+
+  const [invoices, expenses, vendorBills, labor, subcontractors, boq] = await Promise.all([
+    prisma.siteInvoice.aggregate({ where: { siteId, status: 'paid' }, _sum: { totalAmount: true } }),
+    prisma.siteExpense.aggregate({ where: { siteId }, _sum: { amount: true } }),
+    prisma.vendorBill.aggregate({ where: { siteId }, _sum: { totalAmount: true } }),
+    prisma.laborAttendance.aggregate({ where: { siteId }, _sum: { wageForDay: true } }),
+    prisma.siteSubcontractor.aggregate({ where: { siteId }, _sum: { paidAmount: true } }),
+    prisma.bOQItem.aggregate({ where: { siteId }, _sum: { totalAmount: true } }),
+  ]);
+
+  const revenue = invoices._sum.totalAmount ?? 0;
+  const expensesTotal = expenses._sum.amount ?? 0;
+  const vendorCost = vendorBills._sum.totalAmount ?? 0;
+  const laborCost = labor._sum.wageForDay ?? 0;
+  const subconCost = subcontractors._sum.paidAmount ?? 0;
+  const totalCost = expensesTotal + vendorCost + laborCost + subconCost;
+  const profit = revenue - totalCost;
+  const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+
+  sendSuccess(res, {
+    revenue,
+    totalCost,
+    profit,
+    margin,
+    breakdown: {
+      expenses: expensesTotal,
+      vendor: vendorCost,
+      labor: laborCost,
+      subcon: subconCost,
+      boqBudget: boq._sum.totalAmount ?? 0,
+    },
+  });
+}

@@ -686,6 +686,13 @@ model SiteProject {
   expenses       SiteExpense[]
   invoices       SiteInvoice[]
   subcontractors SiteSubcontractor[]
+  milestones     SiteMilestone[]
+  leads          SiteLead[]
+  designs        DesignDocument[]
+  qualityChecks  QualityCheck[]
+  procurements   ProcurementOrder[]
+  vendorBills    VendorBill[]
+  productions    ProductionTask[]
 }
 
 model SiteLabor {
@@ -865,4 +872,161 @@ model SiteSubcontractor {
   endDate         DateTime?
   notes           String?
   createdAt       DateTime  @default(now())
+}
+
+// ─── NEW MODELS ───────────────────────────────────────────────────────────────
+
+model SiteMilestone {
+  id          String   @id @default(cuid())
+  siteId      String
+  site        SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  category    String   @default("construction") // planning|design|procurement|construction|testing|handover
+  dueDate     DateTime?
+  completedAt DateTime?
+  status      String   @default("pending") // pending|in_progress|completed|delayed|cancelled
+  priority    String   @default("medium") // low|medium|high|critical
+  assignedTo  String?
+  progress    Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SiteLead {
+  id             String   @id @default(cuid())
+  siteId         String
+  site           SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  clientName     String
+  clientPhone    String?
+  clientEmail    String?
+  company        String?
+  projectType    String?
+  estimatedValue Float    @default(0)
+  currency       String   @default("INR")
+  status         String   @default("lead") // lead|proposal|negotiation|won|lost
+  source         String?
+  notes          String?
+  followUpDate   DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model DesignDocument {
+  id            String   @id @default(cuid())
+  siteId        String
+  site          SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  title         String
+  type          String   @default("architectural") // architectural|structural|electrical|plumbing|landscape|interior|other
+  version       String   @default("v1.0")
+  status        String   @default("draft") // draft|under_review|approved|rejected|superseded
+  fileUrl       String?
+  preparedBy    String?
+  checkedBy     String?
+  approvedBy    String?
+  notes         String?
+  revisionNotes String?
+  approvedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model QualityCheck {
+  id         String   @id @default(cuid())
+  siteId     String
+  site       SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  title      String
+  category   String   @default("structural") // structural|electrical|plumbing|finishing|safety|environmental
+  checkDate  DateTime @default(now())
+  status     String   @default("pending") // pending|passed|failed|needs_rectification
+  inspector  String?
+  location   String?
+  findings   String?
+  remarks    String?
+  resolvedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  items      QualityItem[]
+}
+
+model QualityItem {
+  id          String   @id @default(cuid())
+  checkId     String
+  check       QualityCheck @relation(fields: [checkId], references: [id], onDelete: Cascade)
+  description String
+  status      String   @default("pending") // passed|failed|na|pending
+  remarks     String?
+  createdAt   DateTime @default(now())
+}
+
+model ProcurementOrder {
+  id              String   @id @default(cuid())
+  siteId          String
+  site            SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  poNumber        String
+  vendor          String
+  vendorPhone     String?
+  vendorEmail     String?
+  category        String   @default("material") // material|equipment|service|subcontract
+  items           String   @default("[]") // JSON: [{name,qty,unit,rate,amount}]
+  subtotal        Float    @default(0)
+  taxAmount       Float    @default(0)
+  totalAmount     Float    @default(0)
+  currency        String   @default("INR")
+  status          String   @default("draft") // draft|sent|confirmed|delivered|cancelled
+  orderDate       DateTime @default(now())
+  expectedDate    DateTime?
+  deliveredDate   DateTime?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  vendorBills     VendorBill[]
+}
+
+model VendorBill {
+  id            String   @id @default(cuid())
+  siteId        String
+  site          SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  billNumber    String?
+  vendor        String
+  poId          String?
+  po            ProcurementOrder? @relation(fields: [poId], references: [id])
+  category      String   @default("material") // material|labor|equipment|service
+  description   String?
+  amount        Float    @default(0)
+  taxAmount     Float    @default(0)
+  totalAmount   Float    @default(0)
+  currency      String   @default("INR")
+  billDate      DateTime @default(now())
+  dueDate       DateTime?
+  paidDate      DateTime?
+  status        String   @default("pending") // pending|approved|paid|overdue|disputed
+  paymentMethod String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ProductionTask {
+  id           String   @id @default(cuid())
+  siteId       String
+  site         SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  category     String   @default("civil") // civil|structural|electrical|plumbing|finishing|external|other
+  location     String?
+  assignedTo   String?
+  startDate    DateTime?
+  endDate      DateTime?
+  completedAt  DateTime?
+  status       String   @default("pending") // pending|in_progress|completed|on_hold|cancelled
+  priority     String   @default("medium") // low|medium|high|critical
+  progress     Float    @default(0)
+  unit         String?
+  plannedQty   Float?
+  completedQty Float    @default(0)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
