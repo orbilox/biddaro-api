@@ -24,6 +24,7 @@ import loansRoutes from './loans.routes';
 import contactRoutes from './contact.routes';
 import paymentsRoutes from './payments.routes';
 import referralRoutes from './referral.routes';
+import siteManagerRoutes from './siteManager.routes';
 
 const router = Router();
 
@@ -83,6 +84,7 @@ router.use('/loans', loansRoutes);
 router.use('/contact', contactRoutes);
 router.use('/payments', paymentsRoutes);
 router.use('/referral', referralRoutes);
+router.use('/site-manager', siteManagerRoutes);
 
 // ─── One-time setup endpoints ─────────────────────────────────────────────────
 import { prisma } from '../config/database';

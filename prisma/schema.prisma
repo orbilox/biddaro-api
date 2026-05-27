@@ -74,6 +74,7 @@ model User {
   buildPlans             BuildPlan[]           @relation("buildPlanPoster")
   buildMedia             BuildMedia[]          @relation("buildMediaUploader")
   loanApplications       LoanApplication[]
+  siteProjects           SiteProject[]         @relation("siteOwner")
   referralsGiven         Referral[]            @relation("referrerOf")
   referralReceived       Referral?             @relation("referredBy")
 }
@@ -649,4 +650,219 @@ model Referral {
   reward      Float    @default(10.0)
   status      String   @default("credited")  // credited|pending
   createdAt   DateTime @default(now())
+}
+
+// ─── Site Manager Add-On ──────────────────────────────────────────────────────
+
+model SiteProject {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation("siteOwner", fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  location      String?
+  latitude      Float?
+  longitude     Float?
+  startDate     DateTime?
+  endDate       DateTime?
+  status        String    @default("active")  // active | completed | on_hold | cancelled
+  budget        Float     @default(0)
+  currency      String    @default("INR")
+  clientName    String?
+  clientPhone   String?
+  clientEmail   String?
+  coverImage    String?
+  progressPct   Float     @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  labor          SiteLabor[]
+  attendance     LaborAttendance[]
+  materials      SiteMaterial[]
+  materialTxns   MaterialTransaction[]
+  reports        DailyReport[]
+  boqItems       BOQItem[]
+  equipment      SiteEquipment[]
+  expenses       SiteExpense[]
+  invoices       SiteInvoice[]
+  subcontractors SiteSubcontractor[]
+}
+
+model SiteLabor {
+  id          String    @id @default(cuid())
+  siteId      String
+  site        SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  name        String
+  phone       String?
+  role        String    @default("helper")  // mason|carpenter|electrician|plumber|supervisor|helper|other
+  dailyWage   Float     @default(0)
+  currency    String    @default("INR")
+  status      String    @default("active")  // active | inactive
+  joinDate    DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+
+  attendance  LaborAttendance[]
+}
+
+model LaborAttendance {
+  id            String    @id @default(cuid())
+  siteId        String
+  site          SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  laborId       String
+  labor         SiteLabor   @relation(fields: [laborId], references: [id], onDelete: Cascade)
+  date          DateTime
+  status        String    @default("present")  // present | absent | half_day | overtime
+  checkInTime   String?
+  checkOutTime  String?
+  checkInLat    Float?
+  checkInLng    Float?
+  hoursWorked   Float     @default(8)
+  wageForDay    Float     @default(0)
+  notes         String?
+  createdAt     DateTime  @default(now())
+
+  @@unique([laborId, date])
+}
+
+model SiteMaterial {
+  id            String    @id @default(cuid())
+  siteId        String
+  site          SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  name          String
+  category      String    @default("other")  // cement|steel|bricks|sand|aggregate|wood|electrical|plumbing|tiles|other
+  unit          String    @default("pcs")    // bags|kg|tonnes|cubic_m|pieces|metres|liters|other
+  currentStock  Float     @default(0)
+  minStock      Float     @default(0)
+  unitCost      Float     @default(0)
+  currency      String    @default("INR")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  transactions  MaterialTransaction[]
+}
+
+model MaterialTransaction {
+  id            String    @id @default(cuid())
+  siteId        String
+  site          SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  materialId    String
+  material      SiteMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  type          String    // received | consumed | wasted | returned
+  quantity      Float
+  unitCost      Float     @default(0)
+  totalCost     Float     @default(0)
+  vendor        String?
+  invoiceNumber String?
+  notes         String?
+  date          DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+}
+
+model DailyReport {
+  id            String    @id @default(cuid())
+  siteId        String
+  site          SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  reportDate    DateTime
+  weather       String?   // sunny | cloudy | rainy | stormy
+  workDone      String?
+  labourCount   Int       @default(0)
+  issues        String?
+  photos        String?   // JSON array of photo URLs
+  nextDayPlan   String?
+  progressPct   Float     @default(0)
+  createdBy     String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([siteId, reportDate])
+}
+
+model BOQItem {
+  id            String    @id @default(cuid())
+  siteId        String
+  site          SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  category      String    @default("civil")  // civil|electrical|plumbing|finishing|structural|other
+  description   String
+  unit          String
+  quantity      Float
+  unitRate      Float
+  totalAmount   Float
+  completedQty  Float     @default(0)
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model SiteEquipment {
+  id            String    @id @default(cuid())
+  siteId        String
+  site          SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  name          String
+  type          String    @default("owned")  // owned | rented | leased
+  category      String    @default("other")  // excavator|crane|mixer|pump|generator|scaffolding|other
+  serialNumber  String?
+  vendor        String?
+  dailyRate     Float     @default(0)
+  currency      String    @default("INR")
+  status        String    @default("active")  // active | maintenance | returned | idle
+  startDate     DateTime?
+  endDate       DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+}
+
+model SiteExpense {
+  id            String    @id @default(cuid())
+  siteId        String
+  site          SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  category      String    // labor | material | equipment | subcontractor | overhead | other
+  description   String
+  amount        Float
+  currency      String    @default("INR")
+  date          DateTime  @default(now())
+  vendor        String?
+  invoiceNumber String?
+  receiptUrl    String?
+  notes         String?
+  createdAt     DateTime  @default(now())
+}
+
+model SiteInvoice {
+  id            String    @id @default(cuid())
+  siteId        String
+  site          SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  invoiceNumber String
+  clientName    String
+  clientEmail   String?
+  amount        Float
+  taxAmount     Float     @default(0)
+  totalAmount   Float
+  currency      String    @default("INR")
+  status        String    @default("draft")  // draft | sent | paid | overdue | cancelled
+  issueDate     DateTime  @default(now())
+  dueDate       DateTime?
+  paidDate      DateTime?
+  notes         String?
+  lineItems     String?   // JSON array
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model SiteSubcontractor {
+  id              String    @id @default(cuid())
+  siteId          String
+  site            SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  name            String
+  company         String?
+  phone           String?
+  email           String?
+  specialty       String    @default("civil")  // civil|electrical|plumbing|painting|tiling|other
+  contractValue   Float     @default(0)
+  paidAmount      Float     @default(0)
+  currency        String    @default("INR")
+  status          String    @default("active")  // active | completed | terminated
+  startDate       DateTime?
+  endDate         DateTime?
+  notes           String?
+  createdAt       DateTime  @default(now())
 }
