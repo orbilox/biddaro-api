@@ -75,6 +75,7 @@ model User {
   buildMedia             BuildMedia[]          @relation("buildMediaUploader")
   loanApplications       LoanApplication[]
   siteProjects           SiteProject[]         @relation("siteOwner")
+  siteTeams              SiteTeamMember[]      @relation("siteTeamMember")
   referralsGiven         Referral[]            @relation("referrerOf")
   referralReceived       Referral?             @relation("referredBy")
 }
@@ -673,6 +674,7 @@ model SiteProject {
   clientEmail   String?
   coverImage    String?
   progressPct   Float     @default(0)
+  publicToken   String?   @unique @default(cuid())  // for client portal sharing
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -693,6 +695,9 @@ model SiteProject {
   procurements   ProcurementOrder[]
   vendorBills    VendorBill[]
   productions    ProductionTask[]
+  teamMembers    SiteTeamMember[]
+  invites        SiteInvite[]
+  issues         SiteIssue[]
 }
 
 model SiteLabor {
@@ -1029,4 +1034,47 @@ model ProductionTask {
   notes        String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model SiteTeamMember {
+  id         String      @id @default(cuid())
+  siteId     String
+  site       SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User        @relation("siteTeamMember", fields: [userId], references: [id], onDelete: Cascade)
+  role       String      @default("viewer")  // owner|admin|pm|engineer|supervisor|client|viewer
+  invitedBy  String?
+  joinedAt   DateTime    @default(now())
+  @@unique([siteId, userId])
+}
+
+model SiteInvite {
+  id         String      @id @default(cuid())
+  siteId     String
+  site       SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  email      String
+  role       String      @default("viewer")
+  token      String      @unique @default(cuid())
+  status     String      @default("pending")  // pending|accepted|expired
+  invitedBy  String
+  expiresAt  DateTime
+  createdAt  DateTime    @default(now())
+}
+
+model SiteIssue {
+  id          String      @id @default(cuid())
+  siteId      String
+  site        SiteProject @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  category    String      @default("defect")  // defect|safety|rfi|punch|delay|other
+  priority    String      @default("medium")  // low|medium|high|critical
+  status      String      @default("open")    // open|in_progress|resolved|closed
+  location    String?
+  reportedBy  String?
+  assignedTo  String?
+  dueDate     DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 }

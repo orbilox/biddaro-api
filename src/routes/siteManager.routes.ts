@@ -38,11 +38,20 @@ import {
   listProductions, addProduction, updateProduction, deleteProduction,
   // P&L
   getPnL,
+  // Team
+  listTeam, inviteMember, updateMemberRole, removeMember,
+  // Issues
+  listIssues, addIssue, updateIssue, deleteIssue,
+  // Client Portal
+  getClientPortal,
 } from '../controllers/siteManager.controller';
 
 const router = Router();
 
-// All routes require authentication
+// ─── Client Portal (public — no auth) ────────────────────────────────────────
+router.get('/portal/:token', getClientPortal);
+
+// All other routes require authentication
 router.use(authenticate);
 
 // ─── Sites ────────────────────────────────────────────────────────────────────
@@ -150,5 +159,17 @@ router.delete('/sites/:siteId/production/:id',  deleteProduction);
 
 // ─── P&L ─────────────────────────────────────────────────────────────────────
 router.get('/sites/:siteId/pnl', getPnL);
+
+// ─── Team Members ─────────────────────────────────────────────────────────────
+router.get('/sites/:siteId/team',                  listTeam);
+router.post('/sites/:siteId/team/invite',          inviteMember);
+router.put('/sites/:siteId/team/:memberId',        updateMemberRole);
+router.delete('/sites/:siteId/team/:memberId',     removeMember);
+
+// ─── Issues / Punch List ──────────────────────────────────────────────────────
+router.get('/sites/:siteId/issues',        listIssues);
+router.post('/sites/:siteId/issues',       addIssue);
+router.put('/sites/:siteId/issues/:id',    updateIssue);
+router.delete('/sites/:siteId/issues/:id', deleteIssue);
 
 export default router;

@@ -1473,3 +1473,192 @@ export async function getPnL(req: AuthenticatedRequest, res: Response): Promise<
     },
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TEAM MEMBERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listTeam(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  const site = await getOwnedSite(siteId, userId);
+  if (!site) { sendNotFound(res, 'Site'); return; }
+
+  const members = await prisma.siteTeamMember.findMany({
+    where: { siteId },
+    include: { user: { select: { id: true, firstName: true, lastName: true, email: true, profileImage: true } } },
+    orderBy: { joinedAt: 'asc' },
+  });
+  sendSuccess(res, members);
+}
+
+export async function inviteMember(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  const { email, role } = req.body;
+
+  const site = await getOwnedSite(siteId, userId);
+  if (!site) { sendNotFound(res, 'Site'); return; }
+  if (!email) { sendError(res, 'email is required', 400); return; }
+
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  const invite = await prisma.siteInvite.create({
+    data: { siteId, email, role: role || 'viewer', invitedBy: userId, expiresAt, status: 'pending' },
+  });
+
+  // If user with this email already exists, add them directly
+  const existingUser = await prisma.user.findFirst({ where: { email } });
+  if (existingUser) {
+    const existing = await prisma.siteTeamMember.findFirst({ where: { siteId, userId: existingUser.id } });
+    if (!existing) {
+      await prisma.siteTeamMember.create({
+        data: { siteId, userId: existingUser.id, role: role || 'viewer', invitedBy: userId },
+      });
+    }
+    await prisma.siteInvite.update({ where: { id: invite.id }, data: { status: 'accepted' } });
+  }
+
+  sendSuccess(res, { invite }, 'Invitation sent');
+}
+
+export async function updateMemberRole(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, memberId } = req.params;
+  const userId = req.user!.userId;
+  const { role } = req.body;
+
+  const site = await getOwnedSite(siteId, userId);
+  if (!site) { sendNotFound(res, 'Site'); return; }
+
+  const member = await prisma.siteTeamMember.findFirst({ where: { id: memberId, siteId } });
+  if (!member) { sendNotFound(res, 'Member'); return; }
+
+  const updated = await prisma.siteTeamMember.update({ where: { id: memberId }, data: { role } });
+  sendSuccess(res, updated, 'Role updated');
+}
+
+export async function removeMember(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, memberId } = req.params;
+  const userId = req.user!.userId;
+
+  const site = await getOwnedSite(siteId, userId);
+  if (!site) { sendNotFound(res, 'Site'); return; }
+
+  const member = await prisma.siteTeamMember.findFirst({ where: { id: memberId, siteId } });
+  if (!member) { sendNotFound(res, 'Member'); return; }
+  if (member.userId === userId) { sendError(res, 'Cannot remove yourself', 400); return; }
+
+  await prisma.siteTeamMember.delete({ where: { id: memberId } });
+  sendSuccess(res, null, 'Member removed');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ISSUES / PUNCH LIST
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listIssues(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  const site = await getOwnedSite(siteId, userId);
+  if (!site) { sendNotFound(res, 'Site'); return; }
+
+  const issues = await prisma.siteIssue.findMany({
+    where: { siteId },
+    orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
+  });
+  sendSuccess(res, issues);
+}
+
+export async function addIssue(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId } = req.params;
+  const userId = req.user!.userId;
+  const site = await getOwnedSite(siteId, userId);
+  if (!site) { sendNotFound(res, 'Site'); return; }
+
+  const { title, description, category, priority, status, location, reportedBy, assignedTo, dueDate } = req.body;
+  if (!title) { sendError(res, 'title is required', 400); return; }
+
+  const issue = await prisma.siteIssue.create({
+    data: {
+      siteId, title, description, category: category || 'defect',
+      priority: priority || 'medium', status: status || 'open',
+      location, reportedBy, assignedTo,
+      dueDate: dueDate ? new Date(dueDate) : null,
+    },
+  });
+  sendSuccess(res, issue, 'Issue created');
+}
+
+export async function updateIssue(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  const site = await getOwnedSite(siteId, userId);
+  if (!site) { sendNotFound(res, 'Site'); return; }
+
+  const issue = await prisma.siteIssue.findFirst({ where: { id, siteId } });
+  if (!issue) { sendNotFound(res, 'Issue'); return; }
+
+  const { title, description, category, priority, status, location, reportedBy, assignedTo, dueDate } = req.body;
+  const resolvedAt = status === 'resolved' || status === 'closed' ? new Date() : undefined;
+
+  const updated = await prisma.siteIssue.update({
+    where: { id },
+    data: {
+      ...(title && { title }), description, category, priority, status,
+      location, reportedBy, assignedTo,
+      dueDate: dueDate ? new Date(dueDate) : undefined,
+      ...(resolvedAt && !issue.resolvedAt && { resolvedAt }),
+    },
+  });
+  sendSuccess(res, updated, 'Issue updated');
+}
+
+export async function deleteIssue(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { siteId, id } = req.params;
+  const userId = req.user!.userId;
+  const site = await getOwnedSite(siteId, userId);
+  if (!site) { sendNotFound(res, 'Site'); return; }
+
+  const issue = await prisma.siteIssue.findFirst({ where: { id, siteId } });
+  if (!issue) { sendNotFound(res, 'Issue'); return; }
+
+  await prisma.siteIssue.delete({ where: { id } });
+  sendSuccess(res, null, 'Issue deleted');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CLIENT PORTAL (public endpoint — no ownership check, uses publicToken)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function getClientPortal(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { token } = req.params;
+
+  const site = await prisma.siteProject.findUnique({
+    where: { publicToken: token },
+    include: {
+      reports: { orderBy: { reportDate: 'desc' }, take: 5 },
+      invoices: { where: { status: 'paid' }, orderBy: { issueDate: 'desc' }, take: 10 },
+      milestones: { orderBy: { dueDate: 'asc' } },
+      boqItems: true,
+    },
+  });
+
+  if (!site) { sendNotFound(res, 'Project'); return; }
+
+  const progress = site.progressPct ?? 0;
+  const totalBOQ = site.boqItems.reduce((s: number, i: any) => s + i.totalAmount, 0);
+  const paidInvoices = site.invoices.reduce((s: number, i: any) => s + i.totalAmount, 0);
+
+  sendSuccess(res, {
+    name: site.name,
+    location: site.location,
+    status: site.status,
+    progress,
+    startDate: site.startDate,
+    endDate: site.endDate,
+    clientName: site.clientName,
+    recentReports: site.reports,
+    invoices: site.invoices,
+    milestones: site.milestones,
+    stats: { totalBudget: site.budget, totalBOQ, paidInvoices, currency: site.currency },
+  });
+}
