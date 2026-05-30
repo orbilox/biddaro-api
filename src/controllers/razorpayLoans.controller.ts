@@ -55,21 +55,36 @@ export async function createLoanOrder(req: AuthenticatedRequest, res: Response) 
   }
 }
 
-// ─── Subscription: Create Razorpay plan + subscription for ₹100/month ─────────
+// ─── Subscription: Create Razorpay subscription for ₹100/month ────────────────
+// Uses RAZORPAY_PLAN_ID env var (pre-created plan). If not set, creates one and
+// logs the plan ID so it can be added to Railway env vars.
 export async function createSubscription(req: AuthenticatedRequest, res: Response) {
   const { loanType } = req.body;
   if (!loanType) return sendError(res, 'loanType is required', 400);
 
   try {
-    const plan = await (razorpay.plans as any).create({
-      item: { name: 'Biddaro Loan Eligibility', amount: 10000, currency: 'INR', unit: 'month' },
-      period:   'monthly',
-      interval: 1,
-      notes:    { loanType },
-    });
+    // Reuse pre-created plan if available (preferred — avoids creating thousands of plans)
+    let planId = process.env.RAZORPAY_PLAN_ID;
+
+    if (!planId) {
+      console.warn('[Razorpay] RAZORPAY_PLAN_ID not set — creating a one-off plan. Set this env var to reuse it.');
+      const plan = await (razorpay.plans as any).create({
+        period:   'monthly',
+        interval: 1,
+        item: {
+          name:        'Biddaro Loan Eligibility',
+          amount:      10000,   // ₹100 in paise
+          currency:    'INR',
+          description: 'Monthly subscription for loan eligibility check',
+        },
+        notes: { loanType },
+      });
+      planId = plan.id as string;
+      console.log(`[Razorpay] Created plan: ${planId} — add RAZORPAY_PLAN_ID=${planId} to Railway env vars`);
+    }
 
     const subscription = await (razorpay.subscriptions as any).create({
-      plan_id:         plan.id,
+      plan_id:         planId,
       total_count:     120,    // 10 years — effectively ongoing
       customer_notify: 1,
       notes:           { loanType },
@@ -84,12 +99,14 @@ export async function createSubscription(req: AuthenticatedRequest, res: Respons
 
     return sendSuccess(res, {
       subscriptionId: subscription.id,
-      planId:         plan.id,
+      planId,
       key:            process.env.RAZORPAY_KEY_ID,
     });
   } catch (err: any) {
-    console.error('[Razorpay] createSubscription error:', err?.error || err);
-    return sendError(res, 'Failed to create subscription', 500);
+    const details = err?.error || err;
+    console.error('[Razorpay] createSubscription error:', JSON.stringify(details));
+    const message = (details as any)?.description || (details as any)?.message || 'Failed to create subscription';
+    return sendError(res, message, 500);
   }
 }
 
