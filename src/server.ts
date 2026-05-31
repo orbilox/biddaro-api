@@ -1,5 +1,6 @@
 import { createServer } from 'http';
 import { Server as SocketIO } from 'socket.io';
+import bcrypt from 'bcryptjs';
 import app from './app';
 import { config } from './config';
 import { connectDB, disconnectDB, prisma } from './config/database';
@@ -82,6 +83,42 @@ async function start() {
   console.log(`[startup] DATABASE_URL set: ${!!process.env.DATABASE_URL}`);
 
   await connectDB();
+
+  // ── Auto-seed admin user (runs only if no admin exists) ───────────────────
+  try {
+    const existing = await prisma.user.findUnique({ where: { email: 'admin@biddaro.com' } });
+    if (!existing) {
+      const hash = await bcrypt.hash('Admin@Biddaro2026!', 12);
+      const admin = await prisma.user.create({
+        data: {
+          email: 'admin@biddaro.com',
+          passwordHash: hash,
+          firstName: 'Super',
+          lastName: 'Admin',
+          role: 'admin',
+          isVerified: true,
+          isActive: true,
+        },
+      });
+      await prisma.wallet.create({
+        data: { userId: admin.id, balance: 0, pendingBalance: 0, totalEarned: 0 },
+      });
+      console.log('[startup] ✅ Admin user created: admin@biddaro.com / Admin@Biddaro2026!');
+    } else if (existing.role !== 'admin') {
+      // Exists but not admin — promote + reset password
+      const hash = await bcrypt.hash('Admin@Biddaro2026!', 12);
+      await prisma.user.update({
+        where: { email: 'admin@biddaro.com' },
+        data: { role: 'admin', isVerified: true, passwordHash: hash },
+      });
+      console.log('[startup] ✅ Existing user promoted to admin: admin@biddaro.com');
+    } else {
+      console.log('[startup] ℹ️  Admin user already exists, skipping seed');
+    }
+  } catch (e) {
+    console.error('[startup] ⚠️  Admin seed failed (non-fatal):', e);
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   httpServer.listen(config.port, '0.0.0.0', () => {
     console.log(`\n🚀 Biddaro API running on port ${config.port}`);
