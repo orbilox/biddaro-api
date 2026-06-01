@@ -7,12 +7,15 @@ import { capiAddPaymentInfo, capiPurchase, capiSubmitApplication } from '../util
 import type { AuthenticatedRequest } from '../types';
 
 // ─── Shared helper: extract browser signals from request ─────────────────────
+// _fbp/_fbc cookies live on biddaro.com — they are NOT forwarded to railway.app
+// (cross-domain). Frontend must pass them explicitly in req.body.fbp / req.body.fbc.
+// cookie-parser fallback is kept for any same-origin or future server-side calls.
 function browserSignals(req: AuthenticatedRequest) {
   return {
     clientIp:        ((req.headers['x-forwarded-for'] as string) ?? '').split(',')[0]?.trim() || (req.socket as any)?.remoteAddress,
     clientUserAgent: req.headers['user-agent'] as string | undefined,
-    fbp:             (req as any).cookies?.['_fbp'] as string | undefined,
-    fbc:             (req as any).cookies?.['_fbc'] as string | undefined,
+    fbp:             (req.body?.fbp as string | undefined) || (req as any).cookies?.['_fbp'] as string | undefined,
+    fbc:             (req.body?.fbc as string | undefined) || (req as any).cookies?.['_fbc'] as string | undefined,
   };
 }
 

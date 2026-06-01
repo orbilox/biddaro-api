@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 import path from 'path';
 import { config } from './config';
 import routes from './routes';
@@ -81,9 +82,10 @@ app.post(
   stripeWebhook,
 );
 
-// ─── Body parsing ─────────────────────────────────────────────────────────────
+// ─── Body parsing & cookies ───────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());   // enables req.cookies — needed for _fbp/_fbc Meta CAPI signals
 app.use(compression());
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
