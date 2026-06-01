@@ -59,7 +59,7 @@ export async function createLoanOrder(req: AuthenticatedRequest, res: Response) 
 // Uses RAZORPAY_PLAN_ID env var (pre-created plan). If not set, creates one and
 // logs the plan ID so it can be added to Railway env vars.
 export async function createSubscription(req: AuthenticatedRequest, res: Response) {
-  const { loanType } = req.body;
+  const { loanType, email, phone, firstName, lastName } = req.body;
   if (!loanType) return sendError(res, 'loanType is required', 400);
 
   try {
@@ -93,6 +93,7 @@ export async function createSubscription(req: AuthenticatedRequest, res: Respons
     // ── Meta CAPI: user opened subscription modal ────────────────────────────
     capiAddPaymentInfo({
       ...browserSignals(req),
+      email, phone, firstName, lastName,
       value: 100, currency: 'INR', contentCategory: loanType,
       sourceUrl: 'https://biddaro.com/loan-apply',
     });
