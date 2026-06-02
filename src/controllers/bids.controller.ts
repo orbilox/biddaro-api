@@ -4,6 +4,7 @@ import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
 import { sendBidReceivedEmail, sendBidAcceptedEmail } from '../utils/email';
 import { sendPushToUser, userWantsPush } from '../utils/push';
+import { getConnectCost } from '../utils/connectCost';
 import type { AuthenticatedRequest } from '../types';
 
 const BID_INCLUDE = {
@@ -15,7 +16,8 @@ const BID_INCLUDE = {
   },
   job: {
     select: {
-      id: true, title: true, budget: true, location: true, category: true, status: true, posterId: true,
+      id: true, title: true, budget: true, budgetType: true, currency: true,
+      location: true, category: true, status: true, posterId: true,
       poster: { select: { id: true, firstName: true, lastName: true, profileImage: true } },
     },
   },
@@ -55,22 +57,65 @@ export async function createBid(req: AuthenticatedRequest, res: Response): Promi
   });
   if (existing) { sendError(res, 'You have already placed a bid on this job', 409); return; }
 
-  const bid = await prisma.bid.create({
-    data: {
-      jobId,
-      contractorId: req.user!.userId,
-      amount: parseFloat(amount),
-      estimatedDays: estimatedDays ? parseInt(estimatedDays) : undefined,
-      proposal,
-      portfolio:    portfolio    ? JSON.stringify(portfolio)    : undefined,
-      certificates: certificates ? JSON.stringify(certificates) : undefined,
-      // New fields: store arrays as JSON strings
-      documents:  Array.isArray(documents)  && documents.length  > 0 ? JSON.stringify(documents)  : undefined,
-      milestones: Array.isArray(milestones) && milestones.length > 0 ? JSON.stringify(milestones) : undefined,
-      isPriority: isPriority === true,
-    },
-    include: BID_INCLUDE,
-  });
+  // ── Connect check & atomic deduction ──────────────────────────────────────
+  const connectCost = getConnectCost(job.budget, job.budgetType ?? 'fixed', job.currency ?? 'USD');
+
+  let bid;
+  try {
+    bid = await prisma.$transaction(async (tx) => {
+      // Re-read inside transaction to prevent race conditions
+      const contractor = await tx.user.findUnique({
+        where: { id: req.user!.userId },
+        select: { connectsBalance: true },
+      });
+      if (!contractor || contractor.connectsBalance < connectCost) {
+        throw new Error('INSUFFICIENT_CONNECTS');
+      }
+
+      const createdBid = await tx.bid.create({
+        data: {
+          jobId,
+          contractorId: req.user!.userId,
+          amount: parseFloat(amount),
+          estimatedDays: estimatedDays ? parseInt(estimatedDays) : undefined,
+          proposal,
+          portfolio:    portfolio    ? JSON.stringify(portfolio)    : undefined,
+          certificates: certificates ? JSON.stringify(certificates) : undefined,
+          documents:  Array.isArray(documents)  && documents.length  > 0 ? JSON.stringify(documents)  : undefined,
+          milestones: Array.isArray(milestones) && milestones.length > 0 ? JSON.stringify(milestones) : undefined,
+          isPriority: isPriority === true,
+        },
+        include: BID_INCLUDE,
+      });
+
+      await tx.user.update({
+        where: { id: req.user!.userId },
+        data: { connectsBalance: { decrement: connectCost } },
+      });
+
+      await tx.connectTransaction.create({
+        data: {
+          userId: req.user!.userId,
+          type: 'debit',
+          amount: connectCost,
+          bidId: createdBid.id,
+          description: `Used ${connectCost} connects to bid on "${job.title}"`,
+        },
+      });
+
+      return createdBid;
+    });
+  } catch (err: unknown) {
+    if ((err as Error).message === 'INSUFFICIENT_CONNECTS') {
+      sendError(
+        res,
+        `Insufficient connects. You need ${connectCost} connects to bid on this job.`,
+        402,
+      );
+      return;
+    }
+    throw err;
+  }
 
   // Notify job poster
   await createNotification(
@@ -198,6 +243,35 @@ export async function acceptBid(req: AuthenticatedRequest, res: Response): Promi
     prisma.job.update({ where: { id: bid.jobId }, data: { status: 'in_progress' } }),
   ]);
 
+  // Refund connects for all auto-declined bidders (fire-and-forget)
+  prisma.bid.findMany({
+    where: { jobId: bid.jobId, id: { not: bid.id }, status: 'declined' },
+    select: { id: true, contractorId: true },
+  }).then(async (declined) => {
+    if (declined.length === 0) return;
+    const jobForCost = bid.job as unknown as { budget: number; budgetType: string; currency: string };
+    const refundCost = getConnectCost(
+      jobForCost.budget,
+      jobForCost.budgetType ?? 'fixed',
+      jobForCost.currency ?? 'USD',
+    );
+    await prisma.$transaction([
+      ...declined.map(b => prisma.user.update({
+        where: { id: b.contractorId },
+        data: { connectsBalance: { increment: refundCost } },
+      })),
+      ...declined.map(b => prisma.connectTransaction.create({
+        data: {
+          userId: b.contractorId,
+          type: 'refund',
+          amount: refundCost,
+          bidId: b.id,
+          description: `Connects refunded: another contractor was selected for "${bid.job.title}"`,
+        },
+      })),
+    ]);
+  }).catch(err => console.error('[Connects] auto-decline refund failed:', err));
+
   // Notify contractor
   await createNotification(
     bid.contractorId, 'bid_accepted',
@@ -231,6 +305,32 @@ export async function declineBid(req: AuthenticatedRequest, res: Response): Prom
   if (bid.status !== 'pending') { sendError(res, 'Bid is not pending', 400); return; }
 
   await prisma.bid.update({ where: { id: bid.id }, data: { status: 'declined' } });
+
+  // Auto-refund connects when poster declines
+  try {
+    const connectCost = getConnectCost(
+      bid.job.budget,
+      (bid.job as Record<string, unknown>).budgetType as string ?? 'fixed',
+      (bid.job as Record<string, unknown>).currency as string ?? 'USD',
+    );
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: bid.contractorId },
+        data: { connectsBalance: { increment: connectCost } },
+      }),
+      prisma.connectTransaction.create({
+        data: {
+          userId: bid.contractorId,
+          type: 'refund',
+          amount: connectCost,
+          bidId: bid.id,
+          description: `Connects refunded: bid declined for "${bid.job.title}"`,
+        },
+      }),
+    ]);
+  } catch (refundErr) {
+    console.error('[Connects] refund on decline failed:', refundErr);
+  }
 
   await createNotification(
     bid.contractorId, 'bid_declined',

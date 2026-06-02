@@ -45,6 +45,7 @@ model User {
   isActive          Boolean   @default(true)
   referralCode      String?   @unique
   referredBy        String?   // stores the referral code used at signup
+  connectsBalance   Int       @default(0)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -78,6 +79,7 @@ model User {
   siteTeams              SiteTeamMember[]      @relation("siteTeamMember")
   referralsGiven         Referral[]            @relation("referrerOf")
   referralReceived       Referral?             @relation("referredBy")
+  connectTransactions    ConnectTransaction[]
 }
 
 model Job {
@@ -1077,4 +1079,23 @@ model SiteIssue {
   resolvedAt  DateTime?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+}
+
+// ─── Connects Token Ledger ────────────────────────────────────────────────────
+
+model ConnectTransaction {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type              String   // "purchase" | "debit" | "refund" | "welcome_bonus"
+  amount            Int      // always positive; direction determined by type
+  bidId             String?
+  description       String?
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  razorpaySignature String?
+  packageKey        String?  // "starter"|"pro"|"power"|"elite"
+  createdAt         DateTime @default(now())
+
+  @@index([userId])
 }

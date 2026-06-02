@@ -25,6 +25,7 @@ import contactRoutes from './contact.routes';
 import paymentsRoutes from './payments.routes';
 import referralRoutes from './referral.routes';
 import siteManagerRoutes from './siteManager.routes';
+import connectsRoutes from './connects.routes';
 
 const router = Router();
 
@@ -55,6 +56,7 @@ router.get('/', (_req: Request, res: Response) => {
       '/api/v1/project-tracking',
       '/api/v1/pm',
       '/api/v1/referral',
+      '/api/v1/connects',
     ],
   });
 });
@@ -85,6 +87,7 @@ router.use('/contact', contactRoutes);
 router.use('/payments', paymentsRoutes);
 router.use('/referral', referralRoutes);
 router.use('/site-manager', siteManagerRoutes);
+router.use('/connects', connectsRoutes);
 
 // ─── One-time setup endpoints ─────────────────────────────────────────────────
 import { prisma } from '../config/database';

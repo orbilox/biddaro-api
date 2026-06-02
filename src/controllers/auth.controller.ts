@@ -243,6 +243,24 @@ export async function verifyOtp(req: Request, res: Response): Promise<void> {
     data: { isVerified: true },
   });
 
+  // Grant 10 welcome connects to new contractors
+  if (user.role === 'contractor') {
+    prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: { connectsBalance: { increment: 10 } },
+      }),
+      prisma.connectTransaction.create({
+        data: {
+          userId: user.id,
+          type: 'welcome_bonus',
+          amount: 10,
+          description: 'Welcome bonus: 10 free connects for joining Biddaro',
+        },
+      }),
+    ]).catch(err => console.error('[Connects] welcome bonus failed:', err));
+  }
+
   // Issue tokens
   const payload = { userId: user.id, email: user.email, role: user.role };
   const accessToken = signAccessToken(payload);
