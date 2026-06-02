@@ -99,6 +99,7 @@ model Job {
   status      String    @default("open")   // open|in_progress|completed|closed|cancelled
   projectType String    @default("standard") // standard|government|corporate
   images      String?   // JSON
+  isSponsored   Boolean   @default(false) // free-to-bid job (admin can set)
   documents   String?   // JSON
   viewCount   Int       @default(0)
   createdAt   DateTime  @default(now())
@@ -128,6 +129,8 @@ model Bid {
   milestones    String?   // JSON array of { title, description, amount, dueDate }
   status        String    @default("pending")  // pending|accepted|declined|withdrawn
   isPriority    Boolean   @default(false)
+  connectCost   Int       @default(0)     // connects spent on this bid
+  withdrawnAt   DateTime?                 // timestamp for 1-hour full-refund window
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

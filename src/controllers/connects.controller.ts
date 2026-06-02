@@ -4,18 +4,8 @@ import { prisma } from '../config/database';
 import { sendSuccess, sendError, sendNotFound } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
 import { razorpay } from '../utils/razorpay';
+import { CONNECT_PACKAGES, PackageKey, getConnectCost } from '../utils/connectCost';
 import type { AuthenticatedRequest } from '../types';
-
-// ─── Connect Packages ─────────────────────────────────────────────────────────
-
-const CONNECT_PACKAGES = {
-  starter: { connects: 10,  priceInPaise: 9900  },   // ₹99
-  pro:     { connects: 30,  priceInPaise: 24900 },   // ₹249
-  power:   { connects: 60,  priceInPaise: 44900 },   // ₹449
-  elite:   { connects: 120, priceInPaise: 79900 },   // ₹799
-} as const;
-
-type PackageKey = keyof typeof CONNECT_PACKAGES;
 
 // ─── Get packages (public) ────────────────────────────────────────────────────
 
@@ -107,7 +97,7 @@ export async function verifyAndCreditConnects(req: AuthenticatedRequest, res: Re
   const pkg = CONNECT_PACKAGES[packageKey];
   if (!pkg) { sendError(res, 'Invalid package key', 400); return; }
 
-  // Verify HMAC signature (same pattern as razorpayLoans.controller.ts)
+  // Verify HMAC signature
   const expectedSig = crypto
     .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
     .update(`${razorpay_order_id}|${razorpay_payment_id}`)
@@ -149,4 +139,82 @@ export async function verifyAndCreditConnects(req: AuthenticatedRequest, res: Re
   ]);
 
   sendSuccess(res, { balance: updatedUser.connectsBalance }, `${pkg.connects} connects added to your account`);
+}
+
+// ─── Get connect cost for a specific job ─────────────────────────────────────
+
+export async function getConnectCostForJob(req: AuthenticatedRequest, res: Response): Promise<void> {
+  // GET /connects/cost/:jobId?isPriority=true
+  const job = await prisma.job.findUnique({
+    where: { id: req.params.jobId },
+    select: { budget: true, budgetType: true, currency: true, isSponsored: true },
+  });
+  if (!job) { sendNotFound(res, 'Job'); return; }
+  if ((job as any).isSponsored) { sendSuccess(res, { cost: 0, sponsored: true }); return; }
+  const isPriority = req.query.isPriority === 'true';
+  const cost = getConnectCost((job as any).budget, (job as any).budgetType ?? 'fixed', (job as any).currency ?? 'USD', isPriority);
+  const user = await prisma.user.findUnique({ where: { id: req.user!.userId }, select: { connectsBalance: true } });
+  sendSuccess(res, { cost, balance: user?.connectsBalance ?? 0, sufficient: (user?.connectsBalance ?? 0) >= cost, sponsored: false });
+}
+
+// ─── Admin: refund all pending bidders on a job ───────────────────────────────
+
+export async function adminRefundJob(req: AuthenticatedRequest, res: Response): Promise<void> {
+  // POST /connects/admin/refund-job/:jobId
+  const { jobId } = req.params;
+  const pendingBids = await prisma.bid.findMany({
+    where: { jobId, status: 'pending' },
+    include: {
+      job: { select: { title: true, budget: true, budgetType: true, currency: true } },
+    },
+  });
+  if (pendingBids.length === 0) { sendSuccess(res, { refunded: 0 }, 'No pending bids to refund'); return; }
+
+  const ops: any[] = [];
+  for (const bid of pendingBids) {
+    const cost = (bid as any).connectCost || getConnectCost(
+      (bid.job as any).budget,
+      (bid.job as any).budgetType ?? 'fixed',
+      (bid.job as any).currency ?? 'USD',
+    );
+    ops.push(
+      prisma.user.update({ where: { id: bid.contractorId }, data: { connectsBalance: { increment: cost } } }),
+      prisma.connectTransaction.create({
+        data: {
+          userId: bid.contractorId,
+          type: 'refund',
+          amount: cost,
+          bidId: bid.id,
+          description: `Connects refunded: job "${(bid.job as any).title}" was cancelled by admin`,
+        },
+      }),
+    );
+  }
+  await prisma.$transaction(ops);
+  sendSuccess(res, { refunded: pendingBids.length }, `Refunded ${pendingBids.length} bidder(s)`);
+}
+
+// ─── Admin: connect usage stats ───────────────────────────────────────────────
+
+export async function adminGetConnectStats(_req: AuthenticatedRequest, res: Response): Promise<void> {
+  // GET /connects/admin/stats
+  const [totalPurchased, totalDebited, totalRefunded, topBuyers, monthlyRevenue] = await Promise.all([
+    prisma.connectTransaction.aggregate({ where: { type: 'purchase' }, _sum: { amount: true }, _count: true }),
+    prisma.connectTransaction.aggregate({ where: { type: 'debit' }, _sum: { amount: true }, _count: true }),
+    prisma.connectTransaction.aggregate({ where: { type: 'refund' }, _sum: { amount: true }, _count: true }),
+    prisma.connectTransaction.groupBy({
+      by: ['userId'],
+      where: { type: 'purchase' },
+      _sum: { amount: true },
+      orderBy: { _sum: { amount: 'desc' } },
+      take: 10,
+    }),
+    prisma.connectTransaction.groupBy({
+      by: ['packageKey'],
+      where: { type: 'purchase' },
+      _sum: { amount: true },
+      _count: true,
+    }),
+  ]);
+  sendSuccess(res, { totalPurchased, totalDebited, totalRefunded, topBuyers, monthlyRevenue });
 }

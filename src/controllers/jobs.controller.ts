@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
+import { getConnectCost } from '../utils/connectCost';
 import type { AuthenticatedRequest } from '../types';
 
 const JOB_INCLUDE = {
@@ -118,6 +119,12 @@ export async function updateJob(req: AuthenticatedRequest, res: Response): Promi
   }
 
   const updated = await prisma.job.update({ where: { id: job.id }, data, include: JOB_INCLUDE });
+
+  // If job is being closed/cancelled, refund all pending bidders' connects
+  if (data.status === 'closed' || data.status === 'cancelled') {
+    refundAllPendingBidders(job.id, job.title).catch(err => console.error('[Connects] job close refund failed:', err));
+  }
+
   sendSuccess(res, parseJobJson(updated), 'Job updated');
 }
 
@@ -132,6 +139,7 @@ export async function deleteJob(req: AuthenticatedRequest, res: Response): Promi
     return;
   }
 
+  refundAllPendingBidders(job.id, job.title).catch(err => console.error('[Connects] job delete refund failed:', err));
   await prisma.job.delete({ where: { id: job.id } });
   sendSuccess(res, null, 'Job deleted');
 }
@@ -254,6 +262,33 @@ export async function estimateJobCost(req: AuthenticatedRequest, res: Response):
   }
 
   sendSuccess(res, { estimatedCost, labor, breakdown, timeline, confidence: 0.82 });
+}
+
+// ─── Refund all pending bidders on a job ─────────────────────────────────────
+
+async function refundAllPendingBidders(jobId: string, jobTitle: string): Promise<void> {
+  const pendingBids = await prisma.bid.findMany({
+    where: { jobId, status: 'pending' },
+    include: { job: { select: { budget: true, budgetType: true, currency: true } } },
+  });
+  if (pendingBids.length === 0) return;
+  const ops: any[] = [];
+  for (const bid of pendingBids) {
+    const cost = (bid as any).connectCost || getConnectCost(
+      (bid.job as any).budget, (bid.job as any).budgetType ?? 'fixed', (bid.job as any).currency ?? 'USD',
+    );
+    if (cost === 0) continue;
+    ops.push(
+      prisma.user.update({ where: { id: bid.contractorId }, data: { connectsBalance: { increment: cost } } }),
+      prisma.connectTransaction.create({
+        data: {
+          userId: bid.contractorId, type: 'refund', amount: cost, bidId: bid.id,
+          description: `Connects refunded: job "${jobTitle}" was closed`,
+        },
+      }),
+    );
+  }
+  if (ops.length > 0) await prisma.$transaction(ops);
 }
 
 // ─── Helper ───────────────────────────────────────────────────────────────────

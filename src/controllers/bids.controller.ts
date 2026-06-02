@@ -58,7 +58,7 @@ export async function createBid(req: AuthenticatedRequest, res: Response): Promi
   if (existing) { sendError(res, 'You have already placed a bid on this job', 409); return; }
 
   // ── Connect check & atomic deduction ──────────────────────────────────────
-  const connectCost = getConnectCost(job.budget, job.budgetType ?? 'fixed', job.currency ?? 'USD');
+  const connectCost = getConnectCost(job.budget, job.budgetType ?? 'fixed', job.currency ?? 'USD', isPriority === true);
 
   let bid;
   try {
@@ -84,6 +84,7 @@ export async function createBid(req: AuthenticatedRequest, res: Response): Promi
           documents:  Array.isArray(documents)  && documents.length  > 0 ? JSON.stringify(documents)  : undefined,
           milestones: Array.isArray(milestones) && milestones.length > 0 ? JSON.stringify(milestones) : undefined,
           isPriority: isPriority === true,
+          connectCost,
         },
         include: BID_INCLUDE,
       });
@@ -246,11 +247,11 @@ export async function acceptBid(req: AuthenticatedRequest, res: Response): Promi
   // Refund connects for all auto-declined bidders (fire-and-forget)
   prisma.bid.findMany({
     where: { jobId: bid.jobId, id: { not: bid.id }, status: 'declined' },
-    select: { id: true, contractorId: true },
+    select: { id: true, contractorId: true, connectCost: true },
   }).then(async (declined) => {
     if (declined.length === 0) return;
     const jobForCost = bid.job as unknown as { budget: number; budgetType: string; currency: string };
-    const refundCost = getConnectCost(
+    const fallbackCost = getConnectCost(
       jobForCost.budget,
       jobForCost.budgetType ?? 'fixed',
       jobForCost.currency ?? 'USD',
@@ -258,18 +259,28 @@ export async function acceptBid(req: AuthenticatedRequest, res: Response): Promi
     await prisma.$transaction([
       ...declined.map(b => prisma.user.update({
         where: { id: b.contractorId },
-        data: { connectsBalance: { increment: refundCost } },
+        data: { connectsBalance: { increment: (b as any).connectCost || fallbackCost } },
       })),
       ...declined.map(b => prisma.connectTransaction.create({
         data: {
           userId: b.contractorId,
           type: 'refund',
-          amount: refundCost,
+          amount: (b as any).connectCost || fallbackCost,
           bidId: b.id,
           description: `Connects refunded: another contractor was selected for "${bid.job.title}"`,
         },
       })),
     ]);
+    // Notify each declined bidder about their refund
+    for (const b of declined) {
+      const cost = (b as any).connectCost || fallbackCost;
+      await createNotification(
+        b.contractorId, 'connects_refunded',
+        'Connects Refunded',
+        `${cost} connects were refunded to your account — another contractor was selected for "${bid.job.title}".`,
+        { jobId: bid.jobId },
+      );
+    }
   }).catch(err => console.error('[Connects] auto-decline refund failed:', err));
 
   // Notify contractor
@@ -307,8 +318,9 @@ export async function declineBid(req: AuthenticatedRequest, res: Response): Prom
   await prisma.bid.update({ where: { id: bid.id }, data: { status: 'declined' } });
 
   // Auto-refund connects when poster declines
+  let refundCost = 0;
   try {
-    const connectCost = getConnectCost(
+    refundCost = (bid as any).connectCost || getConnectCost(
       bid.job.budget,
       (bid.job as Record<string, unknown>).budgetType as string ?? 'fixed',
       (bid.job as Record<string, unknown>).currency as string ?? 'USD',
@@ -316,13 +328,13 @@ export async function declineBid(req: AuthenticatedRequest, res: Response): Prom
     await prisma.$transaction([
       prisma.user.update({
         where: { id: bid.contractorId },
-        data: { connectsBalance: { increment: connectCost } },
+        data: { connectsBalance: { increment: refundCost } },
       }),
       prisma.connectTransaction.create({
         data: {
           userId: bid.contractorId,
           type: 'refund',
-          amount: connectCost,
+          amount: refundCost,
           bidId: bid.id,
           description: `Connects refunded: bid declined for "${bid.job.title}"`,
         },
@@ -338,6 +350,15 @@ export async function declineBid(req: AuthenticatedRequest, res: Response): Prom
     `Your bid for "${bid.job.title}" was not selected this time.`,
     { jobId: bid.jobId },
   );
+
+  if (refundCost > 0) {
+    await createNotification(
+      bid.contractorId, 'connects_refunded',
+      'Connects Refunded',
+      `${refundCost} connects were refunded to your account after your bid on "${bid.job.title}" was declined.`,
+      { jobId: bid.jobId },
+    );
+  }
 
   sendSuccess(res, null, 'Bid declined');
 }
@@ -399,13 +420,38 @@ export async function getBidInsights(req: AuthenticatedRequest, res: Response): 
 // ─── Withdraw a bid ───────────────────────────────────────────────────────────
 
 export async function withdrawBid(req: AuthenticatedRequest, res: Response): Promise<void> {
-  const bid = await prisma.bid.findUnique({ where: { id: req.params.id } });
+  const bid = await prisma.bid.findUnique({
+    where: { id: req.params.id },
+    include: { job: { select: { title: true, budget: true, budgetType: true, currency: true } } },
+  });
   if (!bid) { sendNotFound(res, 'Bid'); return; }
   if (bid.contractorId !== req.user!.userId) { sendForbidden(res); return; }
   if (bid.status !== 'pending') { sendError(res, 'Can only withdraw a pending bid', 400); return; }
 
-  await prisma.bid.update({ where: { id: bid.id }, data: { status: 'withdrawn' } });
-  sendSuccess(res, null, 'Bid withdrawn');
+  const now = new Date();
+  const bidAge = (now.getTime() - bid.createdAt.getTime()) / 1000 / 60; // minutes
+  const fullCost = (bid as any).connectCost || getConnectCost(
+    (bid.job as any).budget, (bid.job as any).budgetType ?? 'fixed', (bid.job as any).currency ?? 'USD',
+  );
+  // Full refund within 60 minutes; 50% refund after
+  const refundAmount = bidAge <= 60 ? fullCost : Math.floor(fullCost / 2);
+
+  await prisma.$transaction([
+    prisma.bid.update({ where: { id: bid.id }, data: { status: 'withdrawn', withdrawnAt: now } }),
+    prisma.user.update({ where: { id: req.user!.userId }, data: { connectsBalance: { increment: refundAmount } } }),
+    prisma.connectTransaction.create({
+      data: {
+        userId: req.user!.userId,
+        type: 'refund',
+        amount: refundAmount,
+        bidId: bid.id,
+        description: bidAge <= 60
+          ? `Full refund: bid withdrawn within 1 hour for "${(bid.job as any).title}"`
+          : `Partial refund (50%): bid withdrawn for "${(bid.job as any).title}"`,
+      },
+    }),
+  ]);
+  sendSuccess(res, { refunded: refundAmount }, `Bid withdrawn — ${refundAmount} connects refunded`);
 }
 
 // ─── Helper ───────────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import { getPagination, buildPaginatedResult } from '../utils/pagination';
 import { config } from '../config';
 import { sendEscrowFundedEmail, sendMilestoneApprovedEmail } from '../utils/email';
 import { sendPushToUser, userWantsPush } from '../utils/push';
+import { getConnectCost } from '../utils/connectCost';
 import type { AuthenticatedRequest } from '../types';
 
 function tryParse(val: unknown) {
@@ -565,6 +566,31 @@ export async function cancelContract(req: AuthenticatedRequest, res: Response): 
   }
 
   await prisma.$transaction(refundOps);
+
+  // If no payment has been released yet, refund the winning contractor's connects
+  if (Number(contract.releasedAmount) === 0) {
+    prisma.bid.findFirst({
+      where: { jobId: contract.jobId, status: 'accepted' },
+      include: { job: { select: { title: true, budget: true, budgetType: true, currency: true } } },
+    }).then(async (acceptedBid) => {
+      if (!acceptedBid) return;
+      const cost = (acceptedBid as any).connectCost || getConnectCost(
+        (acceptedBid.job as any).budget,
+        (acceptedBid.job as any).budgetType ?? 'fixed',
+        (acceptedBid.job as any).currency ?? 'USD',
+      );
+      if (cost === 0) return;
+      await prisma.$transaction([
+        prisma.user.update({ where: { id: contract.contractorId }, data: { connectsBalance: { increment: cost } } }),
+        prisma.connectTransaction.create({
+          data: {
+            userId: contract.contractorId, type: 'refund', amount: cost, bidId: acceptedBid.id,
+            description: `Connects refunded: contract cancelled before work began for "${(acceptedBid.job as any).title}"`,
+          },
+        }),
+      ]);
+    }).catch(err => console.error('[Connects] contract cancel refund failed:', err));
+  }
 
   await notify(otherId, 'contract_cancelled', 'Contract Cancelled',
     `A contract has been cancelled.`, { contractId: contract.id });
