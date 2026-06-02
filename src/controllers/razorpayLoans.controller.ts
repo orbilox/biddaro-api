@@ -26,7 +26,7 @@ function getApplicationFee(loanType: string): number {
 
 // ─── Step 1: Create Razorpay order for the application fee ────────────────────
 export async function createLoanOrder(req: AuthenticatedRequest, res: Response) {
-  const { loanType } = req.body;
+  const { loanType, email, phone, firstName, lastName } = req.body;
 
   if (!loanType) return sendError(res, 'loanType is required', 400);
 
@@ -39,9 +39,10 @@ export async function createLoanOrder(req: AuthenticatedRequest, res: Response) 
       receipt: `loan_fee_${Date.now()}`,
     });
 
-    // ── Meta CAPI: user opened payment modal ────────────────────────────────
+    // ── Meta CAPI: user opened payment modal — include full PII for EMQ ────
     capiAddPaymentInfo({
       ...browserSignals(req),
+      email, phone, firstName, lastName,
       value: amount / 100, currency: 'INR', contentCategory: loanType,
       sourceUrl: 'https://biddaro.com/loan-apply',
     });
