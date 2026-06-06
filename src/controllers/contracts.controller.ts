@@ -522,10 +522,19 @@ export async function cancelContract(req: AuthenticatedRequest, res: Response): 
 
   const otherId = userId === contract.posterId ? contract.contractorId : contract.posterId;
 
+  // Pre-fetch the accepted bid (for connects refund) BEFORE the transaction
+  // so we can include it atomically rather than as a fire-and-forget afterthought.
+  let acceptedBid: { id: string; connectCost: number } | null = null;
+  if (Number(contract.releasedAmount) === 0) {
+    acceptedBid = await prisma.bid.findFirst({
+      where: { jobId: contract.jobId, status: 'accepted' },
+      select: { id: true, connectCost: true },
+    });
+  }
+
   // Refund logic works for BOTH escrow modes:
   //   Full upfront:   escrowAmount = totalAmount  → refund = totalAmount − releasedAmount
   //   Per-milestone:  escrowAmount = Σ funded milestones → refund = funded − releasedAmount
-  // Using escrowAmount (not totalAmount) ensures unfunded milestones are never "refunded".
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const refundOps: any[] = [
     prisma.contract.update({ where: { id: contract.id }, data: { status: 'cancelled' } }),
@@ -538,12 +547,10 @@ export async function cancelContract(req: AuthenticatedRequest, res: Response): 
   if (totalInEscrow > 0 && refundAmount > 0) {
     const isPartial = Number(contract.releasedAmount) > 0;
     refundOps.push(
-      // Restore poster's wallet balance with the unspent escrow
       prisma.wallet.update({
         where: { userId: contract.posterId },
         data: { balance: { increment: refundAmount } },
       }),
-      // Record the refund transaction for audit trail
       prisma.transaction.create({
         data: {
           userId: contract.posterId,
@@ -565,32 +572,27 @@ export async function cancelContract(req: AuthenticatedRequest, res: Response): 
     );
   }
 
-  await prisma.$transaction(refundOps);
-
-  // If no payment has been released yet, refund the winning contractor's connects
-  if (Number(contract.releasedAmount) === 0) {
-    prisma.bid.findFirst({
-      where: { jobId: contract.jobId, status: 'accepted' },
-      include: { job: { select: { title: true, budget: true, budgetType: true, currency: true } } },
-    }).then(async (acceptedBid) => {
-      if (!acceptedBid) return;
-      const cost = (acceptedBid as any).connectCost || getConnectCost(
-        (acceptedBid.job as any).budget,
-        (acceptedBid.job as any).budgetType ?? 'fixed',
-        (acceptedBid.job as any).currency ?? 'USD',
-      );
-      if (cost === 0) return;
-      await prisma.$transaction([
-        prisma.user.update({ where: { id: contract.contractorId }, data: { connectsBalance: { increment: cost } } }),
-        prisma.connectTransaction.create({
-          data: {
-            userId: contract.contractorId, type: 'refund', amount: cost, bidId: acceptedBid.id,
-            description: `Connects refunded: contract cancelled before work began for "${(acceptedBid.job as any).title}"`,
-          },
-        }),
-      ]);
-    }).catch(err => console.error('[Connects] contract cancel refund failed:', err));
+  // Include connects refund inside the SAME transaction (atomic with escrow refund)
+  // ?? preserves 0 for sponsored-job bids (they cost 0, so refund 0)
+  if (acceptedBid && (acceptedBid.connectCost ?? 0) > 0) {
+    refundOps.push(
+      prisma.user.update({
+        where: { id: contract.contractorId },
+        data: { connectsBalance: { increment: acceptedBid.connectCost } },
+      }),
+      prisma.connectTransaction.create({
+        data: {
+          userId: contract.contractorId,
+          type: 'refund',
+          amount: acceptedBid.connectCost,
+          bidId: acceptedBid.id,
+          description: `Connects refunded: contract cancelled before work began`,
+        },
+      }),
+    );
   }
+
+  await prisma.$transaction(refundOps);
 
   await notify(otherId, 'contract_cancelled', 'Contract Cancelled',
     `A contract has been cancelled.`, { contractId: contract.id });

@@ -198,7 +198,7 @@ export async function adminRefundJob(req: AuthenticatedRequest, res: Response): 
 
 export async function adminGetConnectStats(_req: AuthenticatedRequest, res: Response): Promise<void> {
   // GET /connects/admin/stats
-  const [totalPurchased, totalDebited, totalRefunded, topBuyers, monthlyRevenue] = await Promise.all([
+  const [totalPurchased, totalDebited, totalRefunded, topBuyers, purchasesByPackage] = await Promise.all([
     prisma.connectTransaction.aggregate({ where: { type: 'purchase' }, _sum: { amount: true }, _count: true }),
     prisma.connectTransaction.aggregate({ where: { type: 'debit' }, _sum: { amount: true }, _count: true }),
     prisma.connectTransaction.aggregate({ where: { type: 'refund' }, _sum: { amount: true }, _count: true }),
@@ -209,6 +209,7 @@ export async function adminGetConnectStats(_req: AuthenticatedRequest, res: Resp
       orderBy: { _sum: { amount: 'desc' } },
       take: 10,
     }),
+    // Purchases grouped by package — correctly named (was "monthlyRevenue", which was wrong)
     prisma.connectTransaction.groupBy({
       by: ['packageKey'],
       where: { type: 'purchase' },
@@ -216,5 +217,61 @@ export async function adminGetConnectStats(_req: AuthenticatedRequest, res: Resp
       _count: true,
     }),
   ]);
-  sendSuccess(res, { totalPurchased, totalDebited, totalRefunded, topBuyers, monthlyRevenue });
+
+  // Real monthly revenue: purchases grouped by calendar month (last 12 months)
+  const twelveMonthsAgo = new Date();
+  twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+  const monthlyRevenue = await prisma.$queryRaw<Array<{ month: string; connects: number; transactions: number }>>`
+    SELECT
+      TO_CHAR(DATE_TRUNC('month', "createdAt"), 'YYYY-MM') AS month,
+      SUM(amount)::int                                      AS connects,
+      COUNT(*)::int                                         AS transactions
+    FROM "ConnectTransaction"
+    WHERE type = 'purchase'
+      AND "createdAt" >= ${twelveMonthsAgo}
+    GROUP BY DATE_TRUNC('month', "createdAt")
+    ORDER BY DATE_TRUNC('month', "createdAt") DESC
+  `;
+
+  sendSuccess(res, { totalPurchased, totalDebited, totalRefunded, topBuyers, purchasesByPackage, monthlyRevenue });
+}
+
+// ─── Admin: manually grant connects to a user ─────────────────────────────────
+
+export async function adminGrantConnects(req: AuthenticatedRequest, res: Response): Promise<void> {
+  // POST /connects/admin/grant/:userId
+  const { userId } = req.params;
+  const { amount, reason } = req.body as { amount: number; reason?: string };
+
+  if (!amount || typeof amount !== 'number' || amount <= 0 || !Number.isInteger(amount)) {
+    sendError(res, 'amount must be a positive integer', 400); return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, firstName: true, lastName: true, role: true } });
+  if (!user) { sendNotFound(res, 'User'); return; }
+
+  const [updatedUser] = await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data: { connectsBalance: { increment: amount } },
+      select: { connectsBalance: true },
+    }),
+    prisma.connectTransaction.create({
+      data: {
+        userId,
+        type: 'grant',
+        amount,
+        description: reason
+          ? `Admin grant: ${reason}`
+          : `Admin manually granted ${amount} connects`,
+      },
+    }),
+  ]);
+
+  sendSuccess(res, {
+    userId,
+    name: `${user.firstName} ${user.lastName}`,
+    newBalance: updatedUser.connectsBalance,
+    granted: amount,
+  }, `Granted ${amount} connects to ${user.firstName} ${user.lastName}`);
 }

@@ -243,22 +243,27 @@ export async function verifyOtp(req: Request, res: Response): Promise<void> {
     data: { isVerified: true },
   });
 
-  // Grant 10 welcome connects to new contractors
+  // Grant 10 welcome connects to new contractors (idempotent — once per user)
   if (user.role === 'contractor') {
-    prisma.$transaction([
-      prisma.user.update({
-        where: { id: user.id },
-        data: { connectsBalance: { increment: 10 } },
-      }),
-      prisma.connectTransaction.create({
-        data: {
-          userId: user.id,
-          type: 'welcome_bonus',
-          amount: 10,
-          description: 'Welcome bonus: 10 free connects for joining Biddaro',
-        },
-      }),
-    ]).catch(err => console.error('[Connects] welcome bonus failed:', err));
+    prisma.connectTransaction.count({
+      where: { userId: user.id, type: 'welcome_bonus' },
+    }).then(count => {
+      if (count > 0) return;  // already granted — prevent double-credit on retry
+      return prisma.$transaction([
+        prisma.user.update({
+          where: { id: user.id },
+          data: { connectsBalance: { increment: 10 } },
+        }),
+        prisma.connectTransaction.create({
+          data: {
+            userId: user.id,
+            type: 'welcome_bonus',
+            amount: 10,
+            description: 'Welcome bonus: 10 free connects for joining Biddaro',
+          },
+        }),
+      ]);
+    }).catch(err => console.error('[Connects] welcome bonus failed:', err));
   }
 
   // Issue tokens

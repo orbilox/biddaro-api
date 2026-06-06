@@ -135,6 +135,8 @@ model Bid {
   updatedAt     DateTime  @updatedAt
 
   contract      Contract?
+
+  @@index([jobId, status])   // perf: refundAllPendingBidders + acceptBid auto-decline
 }
 
 model Contract {
@@ -1090,14 +1092,14 @@ model ConnectTransaction {
   id                String   @id @default(cuid())
   userId            String
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type              String   // "purchase" | "debit" | "refund" | "welcome_bonus"
+  type              String   // "purchase" | "debit" | "refund" | "welcome_bonus" | "grant"
   amount            Int      // always positive; direction determined by type
   bidId             String?
   description       String?
   razorpayOrderId   String?
-  razorpayPaymentId String?
+  razorpayPaymentId String?  @unique  // DB-level idempotency: one credit per Razorpay payment
   razorpaySignature String?
-  packageKey        String?  // "starter"|"pro"|"power"|"elite"
+  packageKey        String?  // "starter"|"pro"|"power"|"elite"|"bulk"
   createdAt         DateTime @default(now())
 
   @@index([userId])

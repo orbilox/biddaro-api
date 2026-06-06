@@ -139,7 +139,13 @@ export async function deleteJob(req: AuthenticatedRequest, res: Response): Promi
     return;
   }
 
-  refundAllPendingBidders(job.id, job.title).catch(err => console.error('[Connects] job delete refund failed:', err));
+  // Refund before delete so bidIds remain valid for ConnectTransaction.bidId FK
+  try {
+    await refundAllPendingBidders(job.id, job.title);
+  } catch (err) {
+    console.error('[Connects] job delete refund failed:', err);
+    // Continue with deletion even if refund fails — log for manual review
+  }
   await prisma.job.delete({ where: { id: job.id } });
   sendSuccess(res, null, 'Job deleted');
 }
@@ -274,7 +280,8 @@ async function refundAllPendingBidders(jobId: string, jobTitle: string): Promise
   if (pendingBids.length === 0) return;
   const ops: any[] = [];
   for (const bid of pendingBids) {
-    const cost = (bid as any).connectCost || getConnectCost(
+    // ?? preserves 0 for sponsored-job bids (they cost 0, so refund 0)
+    const cost = (bid as any).connectCost ?? getConnectCost(
       (bid.job as any).budget, (bid.job as any).budgetType ?? 'fixed', (bid.job as any).currency ?? 'USD',
     );
     if (cost === 0) continue;
@@ -290,6 +297,7 @@ async function refundAllPendingBidders(jobId: string, jobTitle: string): Promise
   }
   if (ops.length > 0) await prisma.$transaction(ops);
 }
+
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
