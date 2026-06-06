@@ -18,6 +18,11 @@
 
 import { Response } from 'express';
 import OpenAI from 'openai';
+import {
+  Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
+  BorderStyle, Table, TableRow, TableCell, WidthType, ShadingType,
+  Footer, PageNumber, Header, LevelFormat,
+} from 'docx';
 import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
 import { getPagination } from '../utils/pagination';
@@ -569,6 +574,320 @@ export async function sendReport(req: AuthenticatedRequest, res: Response): Prom
     });
     // TODO: integrate email delivery (SendGrid / nodemailer)
     sendSuccess(res, updated);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REPORT EXPORT — WORD (.docx)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type ReportSection = {
+  id: string;
+  title: string;
+  content: string;
+  findings?: string[];
+  severity?: string;
+};
+
+type ReportContent = {
+  title?: string;
+  sections: ReportSection[];
+  summary?: {
+    totalFindings: number;
+    criticalCount: number;
+    warningCount: number;
+    normalCount: number;
+    overallStatus: string;
+  };
+};
+
+function severityColor(severity?: string): string {
+  if (severity === 'critical') return 'C0392B';
+  if (severity === 'warning')  return 'D68910';
+  return '1A5276';
+}
+
+function severityLabel(severity?: string): string {
+  if (severity === 'critical') return '⚠ CRITICAL';
+  if (severity === 'warning')  return '⚠ WARNING';
+  return '✓ SATISFACTORY';
+}
+
+function buildDocx(
+  report: {
+    id: string; title: string; status: string; createdAt: Date;
+    sentAt: Date | null; sentTo: string | null;
+  },
+  content: ReportContent,
+  project: { name: string; location: string | null; clientName: string | null },
+): Promise<Buffer> {
+  const { sections, summary } = content;
+  const BRAND   = '1E3A5F';   // dark navy
+  const DIVIDER = 'BDC3C7';
+  const LIGHT   = 'F4F6F8';
+
+  const thin = { style: BorderStyle.SINGLE, size: 1, color: DIVIDER };
+  const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+
+  // Helper: section summary badge row
+  function summaryRow(label: string, value: string | number, color: string) {
+    return new TableRow({
+      children: [
+        new TableCell({
+          borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
+          width: { size: 7000, type: WidthType.DXA },
+          margins: { top: 60, bottom: 60, left: 120, right: 120 },
+          children: [new Paragraph({ children: [new TextRun({ text: label, font: 'Arial', size: 20, color: '555555' })] })],
+        }),
+        new TableCell({
+          borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
+          width: { size: 2360, type: WidthType.DXA },
+          margins: { top: 60, bottom: 60, left: 120, right: 120 },
+          children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: String(value), font: 'Arial', size: 20, bold: true, color })] })],
+        }),
+      ],
+    });
+  }
+
+  const children: Paragraph[] = [];
+
+  // ── Cover block ─────────────────────────────────────────────────────────────
+  children.push(
+    new Paragraph({
+      spacing: { before: 0, after: 120 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: BRAND, space: 1 } },
+      children: [
+        new TextRun({ text: 'INSPECTION REPORT', font: 'Arial', size: 40, bold: true, color: BRAND }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { before: 240, after: 60 },
+      children: [new TextRun({ text: report.title, font: 'Arial', size: 32, bold: true, color: '1C1C1C' })],
+    }),
+    new Paragraph({ spacing: { before: 0, after: 60 }, children: [new TextRun({ text: ' ', size: 8 })] }),
+  );
+
+  // Project meta table
+  const metaRows = [
+    ['Project', project.name],
+    ['Location', project.location ?? '—'],
+    ['Client', project.clientName ?? '—'],
+    ['Date', new Date(report.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })],
+    ['Report Status', report.status.toUpperCase()],
+  ];
+  if (report.sentAt && report.sentTo) {
+    metaRows.push(['Sent To', `${report.sentTo} on ${new Date(report.sentAt).toLocaleDateString()}`]);
+  }
+
+  const metaTable = new Table({
+    width: { size: 9360, type: WidthType.DXA },
+    columnWidths: [2880, 6480],
+    rows: metaRows.map(([label, value], i) =>
+      new TableRow({
+        children: [
+          new TableCell({
+            shading: { fill: i % 2 === 0 ? LIGHT : 'FFFFFF', type: ShadingType.CLEAR },
+            borders: { top: thin, bottom: thin, left: thin, right: thin },
+            width: { size: 2880, type: WidthType.DXA },
+            margins: { top: 80, bottom: 80, left: 160, right: 80 },
+            children: [new Paragraph({ children: [new TextRun({ text: label, font: 'Arial', size: 19, bold: true, color: BRAND })] })],
+          }),
+          new TableCell({
+            shading: { fill: i % 2 === 0 ? LIGHT : 'FFFFFF', type: ShadingType.CLEAR },
+            borders: { top: thin, bottom: thin, left: thin, right: thin },
+            width: { size: 6480, type: WidthType.DXA },
+            margins: { top: 80, bottom: 80, left: 160, right: 80 },
+            children: [new Paragraph({ children: [new TextRun({ text: value, font: 'Arial', size: 19, color: '2C2C2C' })] })],
+          }),
+        ],
+      })
+    ),
+  });
+
+  children.push(
+    metaTable as unknown as Paragraph,
+    new Paragraph({ spacing: { before: 300, after: 60 }, children: [new TextRun({ text: ' ', size: 4 })] }),
+  );
+
+  // ── Summary block ────────────────────────────────────────────────────────────
+  if (summary) {
+    const overallColor = summary.overallStatus === 'critical' ? 'C0392B' : summary.overallStatus === 'requires_attention' ? 'D68910' : '1E8449';
+    const overallLabel = summary.overallStatus === 'critical' ? '⚠  CRITICAL ISSUES FOUND'
+      : summary.overallStatus === 'requires_attention' ? '⚠  REQUIRES ATTENTION'
+      : '✓  SATISFACTORY';
+
+    children.push(
+      new Paragraph({
+        spacing: { before: 240, after: 120 },
+        children: [new TextRun({ text: 'FINDINGS SUMMARY', font: 'Arial', size: 22, bold: true, color: BRAND, allCaps: true })],
+      }),
+      new Table({
+        width: { size: 9360, type: WidthType.DXA },
+        columnWidths: [9360],
+        rows: [
+          new TableRow({
+            children: [new TableCell({
+              shading: { fill: overallColor === 'C0392B' ? 'FDEDEC' : overallColor === 'D68910' ? 'FEF9E7' : 'EAFAF1', type: ShadingType.CLEAR },
+              borders: { top: thin, bottom: thin, left: { style: BorderStyle.SINGLE, size: 16, color: overallColor }, right: thin },
+              margins: { top: 100, bottom: 100, left: 200, right: 200 },
+              children: [new Paragraph({
+                children: [new TextRun({ text: overallLabel, font: 'Arial', size: 24, bold: true, color: overallColor })],
+              })],
+            })],
+          }),
+        ],
+      }) as unknown as Paragraph,
+      new Paragraph({ spacing: { before: 80, after: 0 }, children: [new TextRun({ text: ' ', size: 4 })] }),
+      new Table({
+        width: { size: 9360, type: WidthType.DXA },
+        columnWidths: [7000, 2360],
+        rows: [
+          summaryRow('Total Findings', summary.totalFindings, '1C1C1C'),
+          summaryRow('Critical Issues', summary.criticalCount, summary.criticalCount > 0 ? 'C0392B' : '1E8449'),
+          summaryRow('Warnings', summary.warningCount, summary.warningCount > 0 ? 'D68910' : '1E8449'),
+          summaryRow('Satisfactory Items', summary.normalCount, '1E8449'),
+        ],
+      }) as unknown as Paragraph,
+      new Paragraph({ spacing: { before: 300, after: 0 }, children: [new TextRun({ text: ' ', size: 4 })] }),
+    );
+  }
+
+  // ── Sections ─────────────────────────────────────────────────────────────────
+  sections.forEach((section, i) => {
+    const sColor = severityColor(section.severity);
+    const sLabel = severityLabel(section.severity);
+
+    children.push(
+      // Section heading with severity badge
+      new Paragraph({
+        spacing: { before: i === 0 ? 0 : 360, after: 80 },
+        border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: sColor, space: 1 } },
+        children: [
+          new TextRun({ text: `${i + 1}.  ${section.title}`, font: 'Arial', size: 26, bold: true, color: BRAND }),
+          new TextRun({ text: `   ${sLabel}`, font: 'Arial', size: 18, color: sColor }),
+        ],
+      }),
+    );
+
+    // Section content paragraphs
+    if (section.content) {
+      const paras = section.content.split('\n\n').filter(Boolean);
+      paras.forEach(para => {
+        children.push(new Paragraph({
+          spacing: { before: 120, after: 60 },
+          children: [new TextRun({ text: para.trim(), font: 'Arial', size: 22, color: '2C2C2C' })],
+        }));
+      });
+    }
+
+    // Key findings bulleted list
+    if (section.findings && section.findings.length > 0) {
+      children.push(new Paragraph({
+        spacing: { before: 160, after: 60 },
+        children: [new TextRun({ text: 'Key Findings', font: 'Arial', size: 22, bold: true, color: BRAND })],
+      }));
+      section.findings.forEach((finding, fi) => {
+        children.push(new Paragraph({
+          spacing: { before: 60, after: 60 },
+          indent: { left: 360, hanging: 360 },
+          children: [
+            new TextRun({ text: `${fi + 1}.  `, font: 'Arial', size: 22, bold: true, color: sColor }),
+            new TextRun({ text: finding, font: 'Arial', size: 22, color: '2C2C2C' }),
+          ],
+        }));
+      });
+    }
+  });
+
+  // ── Sign-off ─────────────────────────────────────────────────────────────────
+  children.push(
+    new Paragraph({ spacing: { before: 480, after: 120 }, border: { top: thin }, children: [] }),
+    new Paragraph({
+      spacing: { before: 120, after: 60 },
+      children: [new TextRun({ text: 'Report Prepared By', font: 'Arial', size: 20, bold: true, color: BRAND })],
+    }),
+    new Paragraph({
+      spacing: { before: 60, after: 60 },
+      children: [new TextRun({ text: 'Signature: _________________________________', font: 'Arial', size: 20, color: '555555' })],
+    }),
+    new Paragraph({
+      spacing: { before: 60, after: 60 },
+      children: [new TextRun({ text: 'Date: _____________________________________', font: 'Arial', size: 20, color: '555555' })],
+    }),
+    new Paragraph({
+      spacing: { before: 120, after: 60 },
+      children: [new TextRun({ text: 'This report was generated using Biddaro Inspect — AI-powered inspection reporting.', font: 'Arial', size: 18, italics: true, color: '888888' })],
+    }),
+  );
+
+  const doc = new Document({
+    styles: {
+      default: {
+        document: { run: { font: 'Arial', size: 22 } },
+      },
+    },
+    sections: [{
+      properties: {
+        page: {
+          size: { width: 12240, height: 15840 },
+          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+        },
+      },
+      headers: {
+        default: new Header({
+          children: [new Paragraph({
+            alignment: AlignmentType.RIGHT,
+            border: { bottom: { style: BorderStyle.SINGLE, size: 2, color: DIVIDER, space: 1 } },
+            children: [
+              new TextRun({ text: 'Biddaro Inspect  |  ', font: 'Arial', size: 18, color: '888888' }),
+              new TextRun({ text: report.title, font: 'Arial', size: 18, color: '888888' }),
+            ],
+          })],
+        }),
+      },
+      footers: {
+        default: new Footer({
+          children: [new Paragraph({
+            alignment: AlignmentType.CENTER,
+            border: { top: { style: BorderStyle.SINGLE, size: 2, color: DIVIDER, space: 1 } },
+            children: [
+              new TextRun({ text: 'Page ', font: 'Arial', size: 18, color: '888888' }),
+              new TextRun({ children: [PageNumber.CURRENT], font: 'Arial', size: 18, color: '888888' }),
+              new TextRun({ text: ' of ', font: 'Arial', size: 18, color: '888888' }),
+              new TextRun({ children: [PageNumber.TOTAL_PAGES], font: 'Arial', size: 18, color: '888888' }),
+              new TextRun({ text: '  |  biddaro.com/inspect', font: 'Arial', size: 18, color: '888888' }),
+            ],
+          })],
+        }),
+      },
+      children,
+    }],
+  });
+
+  return Packer.toBuffer(doc);
+}
+
+export async function exportReportDocx(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+
+    const report = await prisma.inspectReport.findFirst({
+      where: { id, userId },
+      include: { project: { select: { name: true, location: true, clientName: true } } },
+    });
+    if (!report) { sendNotFound(res, 'Report'); return; }
+
+    const content = report.content as ReportContent;
+    const buffer = await buildDocx(report, content, report.project);
+
+    const filename = `${report.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.docx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
   } catch (err: any) {
     sendError(res, err.message);
   }

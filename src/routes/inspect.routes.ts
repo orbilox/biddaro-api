@@ -10,7 +10,7 @@ import {
   // Captures
   listCaptures, addCapture, updateCapture, deleteCapture,
   // Reports
-  generateReport, listReports, getReport, updateReport, deleteReport, sendReport,
+  generateReport, listReports, getReport, updateReport, deleteReport, sendReport, exportReportDocx,
 } from '../controllers/inspect.controller';
 
 const router = Router();
@@ -48,5 +48,6 @@ router.get('/reports/:id',                    getReport);
 router.put('/reports/:id',                    updateReport);
 router.delete('/reports/:id',                 deleteReport);
 router.post('/reports/:id/send',              sendReport);
+router.get('/reports/:id/export/docx',        exportReportDocx);
 
 export default router;
