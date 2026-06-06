@@ -80,6 +80,9 @@ model User {
   referralsGiven         Referral[]            @relation("referrerOf")
   referralReceived       Referral?             @relation("referredBy")
   connectTransactions    ConnectTransaction[]
+  inspectTemplates       InspectTemplate[]
+  inspectProjects        InspectProject[]
+  inspectReports         InspectReport[]
 }
 
 model Job {
@@ -1102,5 +1105,81 @@ model ConnectTransaction {
   packageKey        String?  // "starter"|"pro"|"power"|"elite"|"bulk"
   createdAt         DateTime @default(now())
 
+  @@index([userId])
+}
+
+// ─── Biddaro Inspect — AI Inspection Reports ─────────────────────────────────
+
+model InspectTemplate {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  structure   Json             // parsed sections/headings as JSON
+  rawContent  String?          // original template text
+  fileUrl     String?          // uploaded .docx / PDF file URL
+  projects    InspectProject[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([userId])
+}
+
+model InspectProject {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateId  String?
+  template    InspectTemplate? @relation(fields: [templateId], references: [id])
+  name        String
+  location    String?
+  clientName  String?
+  clientEmail String?
+  description String?
+  status      String           @default("active")   // active|completed|archived
+  captures    InspectCapture[]
+  reports     InspectReport[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([userId])
+}
+
+model InspectCapture {
+  id          String         @id @default(cuid())
+  projectId   String
+  project     InspectProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type        String         // photo|voice|text
+  content     String?        // transcribed voice or typed text
+  imageUrl    String?
+  gpsLat      Float?
+  gpsLng      Float?
+  annotation  String?
+  section     String?        // which report section this belongs to
+  severity    String         @default("normal")     // normal|warning|critical
+  createdAt   DateTime       @default(now())
+
+  @@index([projectId])
+}
+
+model InspectReport {
+  id           String         @id @default(cuid())
+  projectId    String
+  project      InspectProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title        String
+  status       String         @default("draft")     // draft|review|approved|sent
+  content      Json           // structured sections as JSON
+  rawMarkdown  String?        // full text for export
+  wordFileUrl  String?
+  pdfFileUrl   String?
+  sentAt       DateTime?
+  sentTo       String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([projectId])
   @@index([userId])
 }
