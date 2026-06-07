@@ -1167,6 +1167,7 @@ model InspectCapture {
   annotation  String?
   section     String?        // which report section this belongs to
   severity    String         @default("normal")     // normal|warning|critical
+  tags        String[]       @default([])           // freeform trade/area labels
   createdAt   DateTime       @default(now())
 
   @@index([projectId])

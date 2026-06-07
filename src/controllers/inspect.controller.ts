@@ -336,7 +336,7 @@ export async function addCapture(req: AuthenticatedRequest, res: Response): Prom
     const project = await getOwnedProject(projectId, userId);
     if (!project) { sendNotFound(res, 'Project'); return; }
 
-    const { type, content, imageUrl, gpsLat, gpsLng, annotation, section, severity } = req.body;
+    const { type, content, imageUrl, gpsLat, gpsLng, annotation, section, severity, tags } = req.body;
     if (!type || !['photo', 'voice', 'text'].includes(type)) {
       sendError(res, 'type must be photo|voice|text', 400); return;
     }
@@ -350,6 +350,10 @@ export async function addCapture(req: AuthenticatedRequest, res: Response): Prom
     // Auto-transcribe voice notes if content provided as audio URL
     // (In production this would call a speech-to-text service)
 
+    const safeTags: string[] = Array.isArray(tags)
+      ? tags.map((t: unknown) => String(t).trim()).filter(Boolean).slice(0, 10)
+      : [];
+
     const capture = await prisma.inspectCapture.create({
       data: {
         projectId,
@@ -361,6 +365,7 @@ export async function addCapture(req: AuthenticatedRequest, res: Response): Prom
         annotation: annotation ?? null,
         section: section ?? null,
         severity: severity ?? 'normal',
+        tags: safeTags,
       },
     });
     sendCreated(res, capture);
@@ -390,10 +395,14 @@ export async function updateCapture(req: AuthenticatedRequest, res: Response): P
     const project = await getOwnedProject(projectId, userId);
     if (!project) { sendNotFound(res, 'Project'); return; }
 
-    const { content, annotation, section, severity } = req.body;
+    const { content, annotation, section, severity, tags } = req.body;
+    const updateData: Record<string, unknown> = { content, annotation, section, severity };
+    if (Array.isArray(tags)) {
+      updateData.tags = tags.map((t: unknown) => String(t).trim()).filter(Boolean).slice(0, 10);
+    }
     const capture = await prisma.inspectCapture.update({
       where: { id: cid },
-      data: { content, annotation, section, severity },
+      data: updateData,
     });
     sendSuccess(res, capture);
   } catch (err: any) {
