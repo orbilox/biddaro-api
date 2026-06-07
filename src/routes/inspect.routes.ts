@@ -35,6 +35,8 @@ import {
   listVersions, restoreVersion,
   // Client signature
   signPublicReport,
+  // Bulk export
+  bulkExportReports,
 } from '../controllers/inspect.controller';
 
 const router = Router();
@@ -118,6 +120,9 @@ router.get('/projects/:projectId/schedules',     listSchedules);
 router.post('/projects/:projectId/schedules',    createSchedule);
 router.put('/schedules/:sid',                    updateSchedule);
 router.delete('/schedules/:sid',                 deleteSchedule);
+
+// ── Bulk export ───────────────────────────────────────────────────────────────
+router.post('/reports/bulk-export',          bulkExportReports);
 
 // ── Report versioning ─────────────────────────────────────────────────────────
 router.get('/reports/:id/versions',          listVersions);

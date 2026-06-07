@@ -17,6 +17,7 @@
  */
 
 import { Request, Response } from 'express';
+import { ZipArchive } from 'archiver';
 import OpenAI from 'openai';
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
@@ -3056,6 +3057,126 @@ export async function exportCertificate(req: AuthenticatedRequest, res: Response
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', buffer.length);
     res.send(buffer);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BULK REPORT ZIP EXPORT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /inspect/reports/bulk-export
+ * Body: { reportIds: string[], includePhotos?: boolean }
+ *
+ * Generates a PDF for each requested report (owned by the caller, max 20)
+ * and streams back a single ZIP archive named "biddaro-reports-<date>.zip".
+ */
+export async function bulkExportReports(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { reportIds, includePhotos = false } = req.body as {
+      reportIds: string[];
+      includePhotos?: boolean;
+    };
+
+    if (!Array.isArray(reportIds) || reportIds.length === 0) {
+      sendError(res, 'reportIds must be a non-empty array'); return;
+    }
+    // Cap at 20 to prevent unbounded processing
+    const safeIds = reportIds.slice(0, 20);
+
+    // Load inspector settings once
+    const settings = await prisma.inspectSettings.findUnique({ where: { userId } });
+
+    // Load all requested reports (ownership-checked in one query)
+    const reports = await prisma.inspectReport.findMany({
+      where: { id: { in: safeIds }, userId },
+      include: {
+        project: { select: { id: true, name: true, location: true, clientName: true } },
+        user:    { select: { firstName: true, lastName: true } },
+      },
+    });
+
+    if (reports.length === 0) {
+      sendNotFound(res, 'Reports'); return;
+    }
+
+    // Generate PDFs in parallel (best-effort — skip individual failures)
+    const pdfResults = await Promise.allSettled(
+      reports.map(async (report) => {
+        let embeddedPhotos: EmbeddedPhoto[] = [];
+
+        if (includePhotos) {
+          const captures = await prisma.inspectCapture.findMany({
+            where: { projectId: report.project.id, type: 'photo' },
+            select: { imageUrl: true, content: true, section: true },
+            orderBy: { createdAt: 'asc' },
+            take: 10, // fewer per report in bulk mode
+          });
+
+          const photoResults = await Promise.allSettled(
+            captures.filter(c => c.imageUrl).map(async (c): Promise<EmbeddedPhoto> => {
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 6000);
+              try {
+                const fetched = await fetch(c.imageUrl!, { signal: controller.signal });
+                if (!fetched.ok) throw new Error(`HTTP ${fetched.status}`);
+                const ab = await fetched.arrayBuffer();
+                return { section: c.section, caption: c.content, buffer: Buffer.from(ab) };
+              } finally {
+                clearTimeout(timeout);
+              }
+            })
+          );
+
+          embeddedPhotos = photoResults
+            .filter((r): r is PromiseFulfilledResult<EmbeddedPhoto> => r.status === 'fulfilled')
+            .map(r => r.value);
+        }
+
+        const content = report.content as ReportContent;
+        const buffer  = await buildPdf(report, content, report.project, settings, embeddedPhotos.length > 0 ? embeddedPhotos : undefined);
+
+        const safeName        = report.title.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+        const projectSafeName = report.project.name.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+        return { buffer, filename: `${projectSafeName}__${safeName}.pdf` };
+      })
+    );
+
+    // Collect successful PDFs only
+    const pdfs = pdfResults
+      .filter((r): r is PromiseFulfilledResult<{ buffer: Buffer; filename: string }> => r.status === 'fulfilled')
+      .map(r => r.value);
+
+    if (pdfs.length === 0) {
+      sendError(res, 'Failed to generate any PDFs'); return;
+    }
+
+    // Build ZIP in memory using archiver
+    const zipBuffer = await new Promise<Buffer>((resolve, reject) => {
+      const archive  = new ZipArchive({ zlib: { level: 6 } });
+      const chunks: Buffer[] = [];
+
+      archive.on('data',  (chunk: Buffer) => chunks.push(chunk));
+      archive.on('end',   ()              => resolve(Buffer.concat(chunks)));
+      archive.on('error', reject);
+
+      for (const pdf of pdfs) {
+        archive.append(pdf.buffer, { name: pdf.filename });
+      }
+
+      archive.finalize();
+    });
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const zipName = `biddaro-reports-${dateStr}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
+    res.setHeader('Content-Length', zipBuffer.length);
+    res.setHeader('X-Report-Count', String(pdfs.length));
+    res.send(zipBuffer);
   } catch (err: any) {
     sendError(res, err.message);
   }
