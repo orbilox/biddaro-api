@@ -661,6 +661,149 @@ export async function sendReport(req: AuthenticatedRequest, res: Response): Prom
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// PORTFOLIO SEARCH — Natural Language AI Assistant
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type SearchResult = {
+  reportId: string;
+  reportTitle: string;
+  projectName: string;
+  projectId: string;
+  section: string;
+  excerpt: string;
+  severity: string;
+  createdAt: string;
+};
+
+type SearchResponse = {
+  answer: string;
+  results: SearchResult[];
+  totalReports: number;
+};
+
+export async function searchPortfolio(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { query } = req.body;
+    if (!query?.trim()) { sendError(res, 'query is required', 400); return; }
+
+    // Fetch all reports for this user with project info and content
+    const reports = await prisma.inspectReport.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 80,  // Cap at 80 to stay within token limits
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        createdAt: true,
+        content: true,
+        project: { select: { id: true, name: true, location: true, clientName: true } },
+      },
+    });
+
+    if (reports.length === 0) {
+      sendSuccess(res, {
+        answer: 'No reports found in your portfolio yet. Generate your first AI report from a project.',
+        results: [],
+        totalReports: 0,
+      } satisfies SearchResponse);
+      return;
+    }
+
+    // Serialise reports into compact context the AI can reason over
+    const reportContext = reports.map((r, i) => {
+      const content = r.content as {
+        sections?: Array<{ title: string; content: string; findings?: string[]; severity?: string }>;
+        summary?: { overallStatus: string; totalFindings: number; criticalCount: number };
+      };
+      const sections = content?.sections ?? [];
+      const sectionText = sections.map(s =>
+        `  [${s.severity?.toUpperCase() ?? 'NORMAL'}] ${s.title}: ${s.content?.slice(0, 400) ?? ''}` +
+        (s.findings?.length ? `\n  Findings: ${s.findings.slice(0, 5).join(' | ')}` : '')
+      ).join('\n');
+
+      return [
+        `--- REPORT ${i + 1} ---`,
+        `ID: ${r.id}`,
+        `Title: ${r.title}`,
+        `Project: ${r.project.name}${r.project.location ? ` (${r.project.location})` : ''}`,
+        `Client: ${r.project.clientName ?? 'N/A'}`,
+        `Date: ${new Date(r.createdAt).toLocaleDateString()}`,
+        `Status: ${r.status}`,
+        `Overall: ${content?.summary?.overallStatus ?? 'N/A'} | Findings: ${content?.summary?.totalFindings ?? 0} | Critical: ${content?.summary?.criticalCount ?? 0}`,
+        `Sections:\n${sectionText}`,
+      ].join('\n');
+    }).join('\n\n');
+
+    const systemPrompt = `You are an intelligent inspection portfolio assistant for a construction inspection platform.
+You have access to all of the user's inspection reports. Answer their question precisely and helpfully.
+
+INSTRUCTIONS:
+- Answer the question directly and concisely (2-4 sentences)
+- Identify specific reports, sections, and findings that are relevant
+- If the query is a search (find reports with X), list matching reports
+- If the query is analytical (how many reports have Y), compute the answer
+- Always cite report IDs and titles when referencing specific reports
+- Be professional and technical in tone
+
+Return your response as a JSON object with this exact structure:
+{
+  "answer": "Direct answer to the question in 2-4 sentences.",
+  "results": [
+    {
+      "reportId": "report-id",
+      "reportTitle": "Report title",
+      "projectName": "Project name",
+      "projectId": "project-id",
+      "section": "Section name where match was found",
+      "excerpt": "Relevant quote or finding from the report (max 200 chars)",
+      "severity": "normal|warning|critical",
+      "createdAt": "ISO date string"
+    }
+  ]
+}
+Only include results that are genuinely relevant to the query. Return an empty array if none are relevant.`;
+
+    const userPrompt = `QUERY: "${query}"
+
+PORTFOLIO (${reports.length} reports):
+${reportContext}`;
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    });
+
+    const raw = completion.choices[0]?.message?.content ?? '{}';
+    const parsed = JSON.parse(raw) as { answer?: string; results?: SearchResult[] };
+
+    // Enrich results with createdAt from the report data we already have
+    const enriched = (parsed.results ?? []).map(r => {
+      const found = reports.find(rep => rep.id === r.reportId);
+      return {
+        ...r,
+        projectId: found?.project?.id ?? r.projectId ?? '',
+        createdAt: found?.createdAt?.toISOString() ?? r.createdAt,
+      };
+    });
+
+    sendSuccess(res, {
+      answer: parsed.answer ?? 'No answer generated.',
+      results: enriched,
+      totalReports: reports.length,
+    } satisfies SearchResponse);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // REPORT EXPORT — WORD (.docx)
 // ═══════════════════════════════════════════════════════════════════════════════
 

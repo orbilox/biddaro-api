@@ -13,6 +13,8 @@ import {
   generateReport, listReports, getReport, updateReport, deleteReport, sendReport, exportReportDocx,
   // Captioning
   captionCapture,
+  // Portfolio search
+  searchPortfolio,
 } from '../controllers/inspect.controller';
 
 const router = Router();
@@ -21,7 +23,8 @@ const router = Router();
 router.use(authenticate);
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-router.get('/dashboard', getDashboardStats);
+router.get('/dashboard',  getDashboardStats);
+router.post('/search',    searchPortfolio);
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 router.get('/templates',        listTemplates);
