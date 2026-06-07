@@ -23,6 +23,7 @@ import {
   BorderStyle, Table, TableRow, TableCell, WidthType, ShadingType,
   Footer, PageNumber, Header, LevelFormat,
 } from 'docx';
+import PDFDocument from 'pdfkit';
 import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
 import { getPagination } from '../utils/pagination';
@@ -1204,6 +1205,267 @@ export async function exportReportDocx(req: AuthenticatedRequest, res: Response)
 
     const filename = `${report.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.docx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ─── PDF Export ───────────────────────────────────────────────────────────────
+
+/**
+ * Renders a professional inspection report as PDF using PDFKit.
+ * Uses built-in Helvetica (no external font files required).
+ */
+function buildPdf(
+  report: {
+    id: string; title: string; status: string; createdAt: Date;
+    sentAt: Date | null; sentTo: string | null;
+  },
+  content: ReportContent,
+  project: { name: string; location: string | null; clientName: string | null },
+): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
+    const BRAND   = '#1E3A5F';
+    const ACCENT  = '#2E86C1';
+    const DIVIDER = '#BDC3C7';
+    const LIGHT   = '#F4F6F8';
+    const BODY    = '#2C3E50';
+
+    function sevFg(sev?: string) {
+      if (sev === 'critical') return '#C0392B';
+      if (sev === 'warning')  return '#D68910';
+      return '#1A7A4A';
+    }
+    function sevBg(sev?: string) {
+      if (sev === 'critical') return '#FDEDEC';
+      if (sev === 'warning')  return '#FEF9E7';
+      return '#EAFAF1';
+    }
+    function sevLabel(sev?: string) {
+      if (sev === 'critical') return 'CRITICAL';
+      if (sev === 'warning')  return 'WARNING';
+      return 'SATISFACTORY';
+    }
+
+    // A4: 595.28 x 841.89 pt, margins: left/right=50, top=70, bottom=60
+    const LEFT = 50, RIGHT = 545, WIDTH = RIGHT - LEFT;
+    const TOP_MARGIN = 70, BOTTOM_MARGIN = 60;
+
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: TOP_MARGIN, bottom: BOTTOM_MARGIN, left: LEFT, right: 595 - RIGHT },
+      autoFirstPage: true,
+      bufferPages: true,
+      info: {
+        Title: report.title || `${project.name} Inspection Report`,
+        Author: 'Biddaro Inspect',
+        Creator: 'Biddaro Platform',
+      },
+    });
+
+    // ── Collect output ─────────────────────────────────────────────────────
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end',  () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const dateStr = new Date(report.createdAt).toLocaleDateString('en-IN', {
+      year: 'numeric', month: 'long', day: 'numeric',
+    });
+
+    // ── Helper: draw page header/footer for all pages ─────────────────────
+    function addPageDecorations() {
+      const range = doc.bufferedPageRange();
+      for (let i = 0; i < range.count; i++) {
+        doc.switchToPage(range.start + i);
+        const pageNum = range.start + i + 1;
+
+        // Header rule
+        doc.save()
+          .moveTo(LEFT, 50).lineTo(RIGHT, 50)
+          .strokeColor(DIVIDER).lineWidth(0.5).stroke()
+          .font('Helvetica').fontSize(7).fillColor('#999999')
+          .text(project.name, LEFT, 36, { width: WIDTH / 2 })
+          .text('BIDDARO INSPECT', LEFT + WIDTH / 2, 36, { width: WIDTH / 2, align: 'right' })
+        // Footer rule
+          .moveTo(LEFT, 790).lineTo(RIGHT, 790)
+          .strokeColor(DIVIDER).lineWidth(0.5).stroke()
+          .text('Biddaro Inspect — Confidential', LEFT, 796, { width: WIDTH / 2 })
+          .text(`Page ${pageNum} of ${range.count}`, LEFT + WIDTH / 2, 796, { width: WIDTH / 2, align: 'right' })
+          .restore();
+      }
+    }
+
+    // ── COVER BLOCK ────────────────────────────────────────────────────────
+    // Brand accent top bar
+    doc.rect(LEFT - 50, 0, 595, 6).fill(BRAND);
+
+    // Brand name + subtitle
+    doc.font('Helvetica-Bold').fontSize(22).fillColor(BRAND)
+      .text('BIDDARO INSPECT', LEFT, 24, { width: WIDTH });
+    doc.font('Helvetica').fontSize(10).fillColor('#666666')
+      .text('AI-Powered Construction Inspection Report', LEFT, 52);
+
+    // Date + status — right-aligned
+    doc.font('Helvetica').fontSize(9).fillColor('#888888')
+      .text(dateStr, LEFT, 24, { width: WIDTH, align: 'right' });
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(ACCENT)
+      .text(`Status: ${(report.status ?? 'draft').toUpperCase()}`, LEFT, 38, { width: WIDTH, align: 'right' });
+
+    // Divider
+    doc.moveTo(LEFT, 76).lineTo(RIGHT, 76).strokeColor(DIVIDER).lineWidth(1).stroke();
+
+    // Report title
+    doc.font('Helvetica-Bold').fontSize(18).fillColor(BRAND)
+      .text(report.title || `${project.name} — Inspection Report`, LEFT, 88, { width: WIDTH });
+
+    let y = doc.y + 14;
+
+    // ── Metadata band ──────────────────────────────────────────────────────
+    doc.rect(LEFT, y, WIDTH, 52).fill(LIGHT);
+    const colW = WIDTH / 3;
+    const labels  = ['Project', 'Location', 'Client'];
+    const values  = [project.name, project.location || '—', project.clientName || '—'];
+    for (let i = 0; i < 3; i++) {
+      const x = LEFT + i * colW + 8;
+      doc.font('Helvetica').fontSize(7).fillColor('#888888').text(labels[i], x, y + 8);
+      doc.font('Helvetica-Bold').fontSize(10).fillColor('#1A1A1A').text(values[i], x, y + 22, { width: colW - 16, lineBreak: false, ellipsis: true });
+    }
+    y += 60;
+
+    // ── Summary badge ──────────────────────────────────────────────────────
+    const { sections, summary } = content;
+    if (summary) {
+      const statusStr  = summary.overallStatus ?? 'Satisfactory';
+      const statusFg   = statusStr.toLowerCase().includes('critical') ? '#C0392B'
+        : statusStr.toLowerCase().includes('warning') ? '#D68910'
+        : '#1A7A4A';
+
+      doc.rect(LEFT, y, WIDTH, 44).fill('#EAF4FB');
+      doc.font('Helvetica-Bold').fontSize(11).fillColor(statusFg)
+        .text(`Overall Status: ${statusStr}`, LEFT + 10, y + 10);
+
+      // Mini counters — right side
+      const stats = [
+        { label: 'Critical', val: summary.criticalCount, col: '#C0392B' },
+        { label: 'Warning',  val: summary.warningCount,  col: '#D68910' },
+        { label: 'Total',    val: summary.totalFindings, col: BRAND },
+      ];
+      let sx = RIGHT - 3 * 68;
+      for (const s of stats) {
+        doc.font('Helvetica-Bold').fontSize(14).fillColor(s.col)
+          .text(String(s.val), sx, y + 6, { width: 60, align: 'center' });
+        doc.font('Helvetica').fontSize(7).fillColor('#666666')
+          .text(s.label, sx, y + 28, { width: 60, align: 'center' });
+        sx += 68;
+      }
+      y += 56;
+    }
+
+    // ── Sections ───────────────────────────────────────────────────────────
+    for (const section of sections) {
+      const fg = sevFg(section.severity);
+      const bg = sevBg(section.severity);
+
+      // Check if we need a new page (leaving room for at least heading + content)
+      if (y > 700) {
+        doc.addPage();
+        y = TOP_MARGIN;
+      }
+
+      // Section heading band
+      doc.rect(LEFT, y, WIDTH, 30).fill(LIGHT);
+      doc.font('Helvetica-Bold').fontSize(12).fillColor(BRAND)
+        .text(section.title, LEFT + 8, y + 9);
+
+      // Severity badge — right side
+      const badge  = sevLabel(section.severity);
+      const badgeW = 80;
+      doc.rect(RIGHT - badgeW - 4, y + 4, badgeW, 22).fill(bg);
+      doc.font('Helvetica-Bold').fontSize(7.5).fillColor(fg)
+        .text(badge, RIGHT - badgeW - 4, y + 11, { width: badgeW, align: 'center' });
+
+      y += 38;
+
+      // Content paragraphs
+      if (section.content) {
+        const paras = section.content.split('\n\n').filter(Boolean);
+        for (const para of paras) {
+          if (y > 750) { doc.addPage(); y = TOP_MARGIN; }
+          doc.font('Helvetica').fontSize(10).fillColor(BODY)
+            .text(para, LEFT, y, { width: WIDTH, lineGap: 2 });
+          y = doc.y + 8;
+        }
+      }
+
+      // Findings numbered list
+      if (section.findings && section.findings.length > 0) {
+        if (y > 730) { doc.addPage(); y = TOP_MARGIN; }
+        doc.font('Helvetica-Bold').fontSize(9.5).fillColor('#444444')
+          .text('Key Findings', LEFT, y);
+        y = doc.y + 4;
+
+        for (let fi = 0; fi < section.findings.length; fi++) {
+          if (y > 750) { doc.addPage(); y = TOP_MARGIN; }
+          // Number bullet
+          doc.rect(LEFT, y, 18, 18).fill(fg);
+          doc.font('Helvetica-Bold').fontSize(8).fillColor('#FFFFFF')
+            .text(String(fi + 1), LEFT, y + 4, { width: 18, align: 'center' });
+          // Finding text
+          doc.font('Helvetica').fontSize(10).fillColor(BODY)
+            .text(section.findings[fi], LEFT + 24, y + 2, { width: WIDTH - 24, lineGap: 2 });
+          y = doc.y + 6;
+        }
+      }
+
+      // Section divider
+      if (y < 780) {
+        y += 8;
+        doc.moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor(DIVIDER).lineWidth(0.5).stroke();
+        y += 16;
+      }
+    }
+
+    // ── Sign-off ───────────────────────────────────────────────────────────
+    if (y > 720) { doc.addPage(); y = TOP_MARGIN; }
+    y += 20;
+    doc.moveTo(LEFT, y).lineTo(LEFT + 160, y).strokeColor('#444444').lineWidth(0.5).stroke();
+    y += 6;
+    doc.font('Helvetica').fontSize(9).fillColor('#888888')
+      .text('Authorised Signatory', LEFT, y);
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(BRAND)
+      .text('Biddaro Inspect', LEFT, y + 14);
+    doc.font('Helvetica').fontSize(8).fillColor('#888888')
+      .text(`Generated: ${dateStr}`, RIGHT - 180, y, { width: 180, align: 'right' });
+    doc.font('Helvetica').fontSize(8).fillColor(ACCENT)
+      .text('Powered by Biddaro Inspect AI', RIGHT - 180, y + 14, { width: 180, align: 'right' });
+
+    // ── Flush with page decorations ────────────────────────────────────────
+    doc.flushPages();
+    addPageDecorations();
+    doc.end();
+  });
+}
+
+export async function exportReportPdf(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+
+    const report = await prisma.inspectReport.findFirst({
+      where: { id, userId },
+      include: { project: { select: { name: true, location: true, clientName: true } } },
+    });
+    if (!report) { sendNotFound(res, 'Report'); return; }
+
+    const content = report.content as ReportContent;
+    const buffer  = await buildPdf(report, content, report.project);
+
+    const filename = `${report.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', buffer.length);
     res.send(buffer);

@@ -10,7 +10,7 @@ import {
   // Captures
   listCaptures, addCapture, updateCapture, deleteCapture,
   // Reports
-  generateReport, listReports, getReport, updateReport, deleteReport, sendReport, exportReportDocx,
+  generateReport, listReports, getReport, updateReport, deleteReport, sendReport, exportReportDocx, exportReportPdf,
   // Captioning
   captionCapture,
   // Portfolio search
@@ -57,6 +57,7 @@ router.put('/reports/:id',                    updateReport);
 router.delete('/reports/:id',                 deleteReport);
 router.post('/reports/:id/send',              sendReport);
 router.get('/reports/:id/export/docx',        exportReportDocx);
+router.get('/reports/:id/export/pdf',         exportReportPdf);
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 router.get('/reports/:id/tasks',    listTasks);
