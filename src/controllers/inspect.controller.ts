@@ -698,6 +698,35 @@ export async function updateReport(req: AuthenticatedRequest, res: Response): Pr
     const report = await getOwnedReport(id, userId);
     if (!report) { sendNotFound(res, 'Report'); return; }
     const { title, status, content, rawMarkdown } = req.body;
+
+    // Auto-snapshot a new version whenever content changes
+    if (content) {
+      const latestVersion = await prisma.inspectReportVersion.findFirst({
+        where: { reportId: id },
+        orderBy: { versionNumber: 'desc' },
+        select: { versionNumber: true },
+      });
+      const nextVersion = (latestVersion?.versionNumber ?? 0) + 1;
+      // Only keep last 20 versions to avoid bloat
+      const versionCount = await prisma.inspectReportVersion.count({ where: { reportId: id } });
+      if (versionCount >= 20) {
+        const oldest = await prisma.inspectReportVersion.findFirst({
+          where: { reportId: id },
+          orderBy: { versionNumber: 'asc' },
+          select: { id: true },
+        });
+        if (oldest) await prisma.inspectReportVersion.delete({ where: { id: oldest.id } });
+      }
+      await prisma.inspectReportVersion.create({
+        data: {
+          reportId: id,
+          userId,
+          versionNumber: nextVersion,
+          content: report.content as object, // snapshot of CURRENT content before overwrite
+        },
+      });
+    }
+
     const updated = await prisma.inspectReport.update({
       where: { id },
       data: { title, status, content, rawMarkdown },
@@ -716,6 +745,62 @@ export async function deleteReport(req: AuthenticatedRequest, res: Response): Pr
     if (!report) { sendNotFound(res, 'Report'); return; }
     await prisma.inspectReport.delete({ where: { id } });
     sendSuccess(res, { deleted: true });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function listVersions(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+    const report = await getOwnedReport(id, userId);
+    if (!report) { sendNotFound(res, 'Report'); return; }
+
+    const versions = await prisma.inspectReportVersion.findMany({
+      where: { reportId: id },
+      orderBy: { versionNumber: 'desc' },
+      include: { user: { select: { firstName: true, lastName: true } } },
+    });
+
+    sendSuccess(res, { versions });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function restoreVersion(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id, vid } = req.params;
+    const report = await getOwnedReport(id, userId);
+    if (!report) { sendNotFound(res, 'Report'); return; }
+
+    const version = await prisma.inspectReportVersion.findFirst({ where: { id: vid, reportId: id } });
+    if (!version) { sendNotFound(res, 'Version'); return; }
+
+    // Save current content as a new version before restoring
+    const latestVersion = await prisma.inspectReportVersion.findFirst({
+      where: { reportId: id },
+      orderBy: { versionNumber: 'desc' },
+      select: { versionNumber: true },
+    });
+    await prisma.inspectReportVersion.create({
+      data: {
+        reportId: id,
+        userId,
+        versionNumber: (latestVersion?.versionNumber ?? 0) + 1,
+        content: report.content as object,
+      },
+    });
+
+    // Restore
+    const restored = await prisma.inspectReport.update({
+      where: { id },
+      data: { content: version.content as object },
+    });
+
+    sendSuccess(res, { report: restored, restoredFrom: version.versionNumber });
   } catch (err: any) {
     sendError(res, err.message);
   }

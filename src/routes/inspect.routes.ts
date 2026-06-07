@@ -31,6 +31,8 @@ import {
   listTasks, createTask, updateTask, deleteTask,
   // Scheduling
   listSchedules, createSchedule, updateSchedule, deleteSchedule, listUpcomingSchedules,
+  // Versioning
+  listVersions, restoreVersion,
 } from '../controllers/inspect.controller';
 
 const router = Router();
@@ -112,5 +114,9 @@ router.get('/projects/:projectId/schedules',     listSchedules);
 router.post('/projects/:projectId/schedules',    createSchedule);
 router.put('/schedules/:sid',                    updateSchedule);
 router.delete('/schedules/:sid',                 deleteSchedule);
+
+// ── Report versioning ─────────────────────────────────────────────────────────
+router.get('/reports/:id/versions',          listVersions);
+router.post('/reports/:id/versions/:vid/restore', restoreVersion);
 
 export default router;

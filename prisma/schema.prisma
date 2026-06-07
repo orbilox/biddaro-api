@@ -87,7 +87,8 @@ model User {
   inspectReviewNotes     InspectReviewNote[]
   inspectFloorPlans      InspectFloorPlan[]
   inspectSettings        InspectSettings?
-  inspectSchedules       InspectSchedule[]
+  inspectSchedules         InspectSchedule[]
+  inspectReportVersions    InspectReportVersion[]
 }
 
 model Job {
@@ -1189,11 +1190,25 @@ model InspectReport {
   publicEnabled Boolean   @default(false)
   tasks         InspectTask[]
   reviewNotes   InspectReviewNote[]
+  versions      InspectReportVersion[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   @@index([projectId])
   @@index([userId])
+}
+
+model InspectReportVersion {
+  id            String         @id @default(cuid())
+  reportId      String
+  report        InspectReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versionNumber Int
+  content       Json           // snapshot of the entire report content at this version
+  createdAt     DateTime       @default(now())
+
+  @@index([reportId])
 }
 
 model InspectTask {
