@@ -85,6 +85,7 @@ model User {
   inspectReports         InspectReport[]
   inspectTasks           InspectTask[]
   inspectReviewNotes     InspectReviewNote[]
+  inspectFloorPlans      InspectFloorPlan[]
 }
 
 model Job {
@@ -1143,6 +1144,7 @@ model InspectProject {
   captures    InspectCapture[]
   reports     InspectReport[]
   tasks       InspectTask[]
+  floorPlans  InspectFloorPlan[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -1227,5 +1229,21 @@ model InspectReviewNote {
   createdAt   DateTime      @default(now())
 
   @@index([reportId])
+  @@index([userId])
+}
+
+model InspectFloorPlan {
+  id          String         @id @default(cuid())
+  projectId   String
+  project     InspectProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  imageUrl    String
+  pins        Json           // Pin[] = [{ id, x, y, title, severity, notes }]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([projectId])
   @@index([userId])
 }

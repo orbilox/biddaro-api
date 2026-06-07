@@ -13,6 +13,8 @@ import {
   generateReport, listReports, getReport, updateReport, deleteReport, sendReport, exportReportDocx, exportReportPdf,
   // Analytics
   getInspectAnalytics,
+  // Floor plans
+  listFloorPlans, createFloorPlan, updateFloorPlan, deleteFloorPlan,
   // Review notes
   listReviewNotes, addReviewNote, deleteReviewNote,
   // Captioning
@@ -63,6 +65,12 @@ router.delete('/reports/:id',                 deleteReport);
 router.post('/reports/:id/send',              sendReport);
 router.get('/reports/:id/export/docx',        exportReportDocx);
 router.get('/reports/:id/export/pdf',         exportReportPdf);
+
+// ── Floor plans ───────────────────────────────────────────────────────────────
+router.get('/projects/:id/floor-plans',        listFloorPlans);
+router.post('/projects/:id/floor-plans',       createFloorPlan);
+router.put('/floor-plans/:fid',                updateFloorPlan);
+router.delete('/floor-plans/:fid',             deleteFloorPlan);
 
 // ── Review notes (audit trail) ────────────────────────────────────────────────
 router.get('/reports/:id/review/notes',    listReviewNotes);

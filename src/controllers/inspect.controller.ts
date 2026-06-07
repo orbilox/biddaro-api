@@ -1520,6 +1520,87 @@ export async function getDashboardStats(req: AuthenticatedRequest, res: Response
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// FLOOR PLANS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type FloorPin = {
+  id: string;
+  x: number;   // 0–1 relative to image width
+  y: number;   // 0–1 relative to image height
+  title: string;
+  severity: string;  // normal|warning|critical
+  notes: string;
+};
+
+export async function listFloorPlans(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id: projectId } = req.params;
+    const project = await getOwnedProject(projectId, userId);
+    if (!project) { sendNotFound(res, 'Project'); return; }
+    const plans = await prisma.inspectFloorPlan.findMany({
+      where: { projectId, userId },
+      orderBy: { createdAt: 'asc' },
+    });
+    sendSuccess(res, plans);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function createFloorPlan(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id: projectId } = req.params;
+    const project = await getOwnedProject(projectId, userId);
+    if (!project) { sendNotFound(res, 'Project'); return; }
+    const { name, imageUrl } = req.body;
+    if (!name?.trim() || !imageUrl?.trim()) {
+      sendError(res, 'name and imageUrl are required', 400); return;
+    }
+    const plan = await prisma.inspectFloorPlan.create({
+      data: { projectId, userId, name: name.trim(), imageUrl: imageUrl.trim(), pins: [] },
+    });
+    sendCreated(res, plan);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function updateFloorPlan(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { fid } = req.params;
+    const plan = await prisma.inspectFloorPlan.findFirst({ where: { id: fid, userId } });
+    if (!plan) { sendNotFound(res, 'Floor plan'); return; }
+    const { name, pins } = req.body;
+    const updated = await prisma.inspectFloorPlan.update({
+      where: { id: fid },
+      data: {
+        ...(name ? { name: name.trim() } : {}),
+        ...(pins !== undefined ? { pins: pins as FloorPin[] } : {}),
+      },
+    });
+    sendSuccess(res, updated);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function deleteFloorPlan(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { fid } = req.params;
+    const plan = await prisma.inspectFloorPlan.findFirst({ where: { id: fid, userId } });
+    if (!plan) { sendNotFound(res, 'Floor plan'); return; }
+    await prisma.inspectFloorPlan.delete({ where: { id: fid } });
+    sendSuccess(res, { deleted: true });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // REVIEW NOTES (audit trail)
 // ═══════════════════════════════════════════════════════════════════════════════
 
