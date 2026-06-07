@@ -11,7 +11,7 @@ import {
   // Captures
   listCaptures, addCapture, updateCapture, deleteCapture,
   // Reports
-  generateReport, listReports, getReport, updateReport, deleteReport, sendReport,
+  generateReport, listReports, listAllReports, getReport, updateReport, deleteReport, sendReport,
   exportReportDocx, exportReportPdf, importReport, listLanguages,
   // Analytics
   getInspectAnalytics,
@@ -61,6 +61,7 @@ router.post('/projects/:id/captures/:cid/caption',  captionCapture);
 
 // ── Reports ───────────────────────────────────────────────────────────────────
 router.get('/languages',                       listLanguages);      // Multi-lingual support
+router.get('/reports',                         listAllReports);     // All reports (cross-project)
 router.post('/projects/:id/reports/generate', generateReport);   // AI generation
 router.post('/projects/:id/reports/import',   upload.single('file'), importReport); // Legacy import
 router.get('/projects/:id/reports',           listReports);

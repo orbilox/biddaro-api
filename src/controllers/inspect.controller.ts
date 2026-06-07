@@ -605,6 +605,42 @@ Write the full inspection report now as JSON.`;
 // REPORTS — CRUD
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// List ALL reports for a user across all projects (for /inspect/reports listing page)
+export async function listAllReports(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { page, limit, skip } = getPagination(req as any);
+    const { status } = req.query;
+
+    const where: Record<string, unknown> = { userId };
+    if (status) where.status = status;
+
+    const [reports, total] = await Promise.all([
+      prisma.inspectReport.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        select: {
+          id:        true,
+          title:     true,
+          status:    true,
+          createdAt: true,
+          updatedAt: true,
+          sentAt:    true,
+          sentTo:    true,
+          project:   { select: { id: true, name: true, location: true, clientName: true } },
+        },
+      }),
+      prisma.inspectReport.count({ where }),
+    ]);
+
+    sendSuccess(res, { reports, total, page, limit });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
 export async function listReports(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const userId = req.user!.userId;
