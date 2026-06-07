@@ -1200,6 +1200,7 @@ type ReportSection = {
   title: string;
   content: string;
   findings?: string[];
+  recommendedActions?: string[];
   severity?: string;
 };
 
@@ -1227,13 +1228,25 @@ function severityLabel(severity?: string): string {
   return '✓ SATISFACTORY';
 }
 
+interface InspectorSettings {
+  companyName?: string | null;
+  inspectorName?: string | null;
+  licenseNo?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  logoUrl?: string | null;
+  footerNote?: string | null;
+}
+
 function buildDocx(
   report: {
     id: string; title: string; status: string; createdAt: Date;
     sentAt: Date | null; sentTo: string | null;
+    user?: { firstName: string; lastName: string };
   },
   content: ReportContent,
   project: { name: string; location: string | null; clientName: string | null },
+  settings?: InspectorSettings | null,
 ): Promise<Buffer> {
   const { sections, summary } = content;
   const BRAND   = '1E3A5F';   // dark navy
@@ -1282,13 +1295,21 @@ function buildDocx(
   );
 
   // Project meta table
+  const inspectorDisplayName = settings?.inspectorName
+    ?? (report.user ? `${report.user.firstName} ${report.user.lastName}` : 'Inspector');
+
   const metaRows = [
     ['Project', project.name],
     ['Location', project.location ?? '—'],
     ['Client', project.clientName ?? '—'],
     ['Date', new Date(report.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })],
     ['Report Status', report.status.toUpperCase()],
+    ['Inspector', inspectorDisplayName],
   ];
+  if (settings?.companyName) metaRows.push(['Company', settings.companyName]);
+  if (settings?.licenseNo)   metaRows.push(['License No.', settings.licenseNo]);
+  if (settings?.phone)       metaRows.push(['Contact', settings.phone]);
+  if (settings?.address)     metaRows.push(['Address', settings.address]);
   if (report.sentAt && report.sentTo) {
     metaRows.push(['Sent To', `${report.sentTo} on ${new Date(report.sentAt).toLocaleDateString()}`]);
   }
@@ -1432,12 +1453,30 @@ function buildDocx(
   });
 
   // ── Sign-off ─────────────────────────────────────────────────────────────────
-  children.push(
+  const signoffLines: Paragraph[] = [
     new Paragraph({ spacing: { before: 480, after: 120 }, border: { top: thin }, children: [] }),
     new Paragraph({
       spacing: { before: 120, after: 60 },
       children: [new TextRun({ text: 'Report Prepared By', font: 'Arial', size: 20, bold: true, color: BRAND })],
     }),
+    new Paragraph({
+      spacing: { before: 60, after: 60 },
+      children: [new TextRun({ text: `Inspector: ${inspectorDisplayName}`, font: 'Arial', size: 20, color: '333333' })],
+    }),
+  ];
+  if (settings?.companyName) {
+    signoffLines.push(new Paragraph({
+      spacing: { before: 40, after: 60 },
+      children: [new TextRun({ text: `Company: ${settings.companyName}`, font: 'Arial', size: 20, color: '333333' })],
+    }));
+  }
+  if (settings?.licenseNo) {
+    signoffLines.push(new Paragraph({
+      spacing: { before: 40, after: 60 },
+      children: [new TextRun({ text: `License No.: ${settings.licenseNo}`, font: 'Arial', size: 20, color: '333333' })],
+    }));
+  }
+  signoffLines.push(
     new Paragraph({
       spacing: { before: 60, after: 60 },
       children: [new TextRun({ text: 'Signature: _________________________________', font: 'Arial', size: 20, color: '555555' })],
@@ -1448,9 +1487,13 @@ function buildDocx(
     }),
     new Paragraph({
       spacing: { before: 120, after: 60 },
-      children: [new TextRun({ text: 'This report was generated using Biddaro Inspect — AI-powered inspection reporting.', font: 'Arial', size: 18, italics: true, color: '888888' })],
+      children: [new TextRun({
+        text: settings?.footerNote ?? 'This report was generated using Biddaro Inspect — AI-powered inspection reporting.',
+        font: 'Arial', size: 18, italics: true, color: '888888',
+      })],
     }),
   );
+  children.push(...signoffLines);
 
   const doc = new Document({
     styles: {
@@ -1632,14 +1675,20 @@ export async function exportReportDocx(req: AuthenticatedRequest, res: Response)
     const userId = req.user!.userId;
     const { id } = req.params;
 
-    const report = await prisma.inspectReport.findFirst({
-      where: { id, userId },
-      include: { project: { select: { name: true, location: true, clientName: true } } },
-    });
+    const [report, settings] = await Promise.all([
+      prisma.inspectReport.findFirst({
+        where: { id, userId },
+        include: {
+          project: { select: { name: true, location: true, clientName: true } },
+          user: { select: { firstName: true, lastName: true } },
+        },
+      }),
+      prisma.inspectSettings.findUnique({ where: { userId } }),
+    ]);
     if (!report) { sendNotFound(res, 'Report'); return; }
 
     const content = report.content as ReportContent;
-    const buffer = await buildDocx(report, content, report.project);
+    const buffer = await buildDocx(report, content, report.project, settings);
 
     const filename = `${report.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.docx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -1661,9 +1710,11 @@ function buildPdf(
   report: {
     id: string; title: string; status: string; createdAt: Date;
     sentAt: Date | null; sentTo: string | null;
+    user?: { firstName: string; lastName: string };
   },
   content: ReportContent,
   project: { name: string; location: string | null; clientName: string | null },
+  settings?: InspectorSettings | null,
 ): Promise<Buffer> {
   return new Promise<Buffer>((resolve, reject) => {
     const BRAND   = '#1E3A5F';
@@ -1894,8 +1945,27 @@ function buildPdf(
     y += 6;
     doc.font('Helvetica').fontSize(9).fillColor('#888888')
       .text('Authorised Signatory', LEFT, y);
+
+    // Inspector display name (settings > user name > 'Biddaro Inspect')
+    const pdfInspectorName = settings?.inspectorName
+      || (report.user ? `${report.user.firstName} ${report.user.lastName}`.trim() : null)
+      || 'Biddaro Inspect';
+    const pdfCompany = settings?.companyName || 'Biddaro Inspect';
     doc.font('Helvetica-Bold').fontSize(9).fillColor(BRAND)
-      .text('Biddaro Inspect', LEFT, y + 14);
+      .text(pdfInspectorName, LEFT, y + 14);
+    if (settings?.companyName) {
+      doc.font('Helvetica').fontSize(8).fillColor('#555555')
+        .text(pdfCompany, LEFT, y + 28);
+    }
+    if (settings?.licenseNo) {
+      doc.font('Helvetica').fontSize(8).fillColor('#888888')
+        .text(`Lic. No: ${settings.licenseNo}`, LEFT, y + (settings.companyName ? 40 : 28));
+    }
+    if (settings?.footerNote) {
+      const fnY = y + (settings.companyName ? (settings.licenseNo ? 54 : 42) : (settings.licenseNo ? 42 : 28));
+      doc.font('Helvetica').fontSize(7.5).fillColor('#AAAAAA')
+        .text(settings.footerNote, LEFT, fnY, { width: WIDTH / 2 });
+    }
     doc.font('Helvetica').fontSize(8).fillColor('#888888')
       .text(`Generated: ${dateStr}`, RIGHT - 180, y, { width: 180, align: 'right' });
     doc.font('Helvetica').fontSize(8).fillColor(ACCENT)
@@ -1913,14 +1983,20 @@ export async function exportReportPdf(req: AuthenticatedRequest, res: Response):
     const userId = req.user!.userId;
     const { id } = req.params;
 
-    const report = await prisma.inspectReport.findFirst({
-      where: { id, userId },
-      include: { project: { select: { name: true, location: true, clientName: true } } },
-    });
+    const [report, settings] = await Promise.all([
+      prisma.inspectReport.findFirst({
+        where: { id, userId },
+        include: {
+          project: { select: { name: true, location: true, clientName: true } },
+          user: { select: { firstName: true, lastName: true } },
+        },
+      }),
+      prisma.inspectSettings.findUnique({ where: { userId } }),
+    ]);
     if (!report) { sendNotFound(res, 'Report'); return; }
 
     const content = report.content as ReportContent;
-    const buffer  = await buildPdf(report, content, report.project);
+    const buffer  = await buildPdf(report, content, report.project, settings);
 
     const filename = `${report.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
@@ -2152,6 +2228,35 @@ export async function deleteReviewNote(req: AuthenticatedRequest, res: Response)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// INSPECTOR SETTINGS (company name, logo, license number for export branding)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function getInspectSettings(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const settings = await prisma.inspectSettings.findUnique({ where: { userId } });
+    sendSuccess(res, settings ?? {});
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function upsertInspectSettings(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { companyName, inspectorName, licenseNo, phone, address, logoUrl, footerNote } = req.body;
+
+    const settings = await prisma.inspectSettings.upsert({
+      where: { userId },
+      update: { companyName, inspectorName, licenseNo, phone, address, logoUrl, footerNote },
+      create: { userId, companyName, inspectorName, licenseNo, phone, address, logoUrl, footerNote },
+    });
+    sendSuccess(res, settings);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
 // ANALYTICS
 // ═══════════════════════════════════════════════════════════════════════════════
 
