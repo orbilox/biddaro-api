@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { authenticate } from '../middleware/auth';
 import {
   // Dashboard
@@ -10,7 +11,8 @@ import {
   // Captures
   listCaptures, addCapture, updateCapture, deleteCapture,
   // Reports
-  generateReport, listReports, getReport, updateReport, deleteReport, sendReport, exportReportDocx, exportReportPdf,
+  generateReport, listReports, getReport, updateReport, deleteReport, sendReport,
+  exportReportDocx, exportReportPdf, importReport,
   // Analytics
   getInspectAnalytics,
   // Floor plans
@@ -26,6 +28,7 @@ import {
 } from '../controllers/inspect.controller';
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 // All inspect routes require authentication
 router.use(authenticate);
@@ -58,6 +61,7 @@ router.post('/projects/:id/captures/:cid/caption',  captionCapture);
 
 // ── Reports ───────────────────────────────────────────────────────────────────
 router.post('/projects/:id/reports/generate', generateReport);   // AI generation
+router.post('/projects/:id/reports/import',   upload.single('file'), importReport); // Legacy import
 router.get('/projects/:id/reports',           listReports);
 router.get('/reports/:id',                    getReport);
 router.put('/reports/:id',                    updateReport);

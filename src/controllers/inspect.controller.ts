@@ -24,6 +24,8 @@ import {
   Footer, PageNumber, Header, LevelFormat,
 } from 'docx';
 import PDFDocument from 'pdfkit';
+import { PDFParse } from 'pdf-parse';
+import mammoth from 'mammoth';
 import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
 import { getPagination } from '../utils/pagination';
@@ -1187,6 +1189,134 @@ function buildDocx(
   });
 
   return Packer.toBuffer(doc);
+}
+
+// ─── Legacy Report Import ─────────────────────────────────────────────────────
+
+/**
+ * Accepts a .docx or .pdf file upload, extracts text, and uses GPT-4o to
+ * parse it into the standard ReportContent structure, creating a new report.
+ */
+export async function importReport(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id: projectId } = req.params;
+
+    const project = await getOwnedProject(projectId, userId);
+    if (!project) { sendNotFound(res, 'Project'); return; }
+
+    const file = (req as typeof req & { file?: Express.Multer.File }).file;
+    if (!file) { sendError(res, 'File is required (multipart/form-data, field: file)', 400); return; }
+
+    const mime = file.mimetype;
+    const buf  = file.buffer;
+
+    // ── Extract raw text from the uploaded file ────────────────────────────
+    let rawText = '';
+    if (mime === 'application/pdf' || file.originalname.endsWith('.pdf')) {
+      const uint8 = new Uint8Array(buf);
+      const parser = new PDFParse({ data: uint8 });
+      const result = await parser.getText();
+      rawText = result.text;
+    } else if (
+      mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      file.originalname.endsWith('.docx')
+    ) {
+      const result = await mammoth.extractRawText({ buffer: buf });
+      rawText = result.value;
+    } else {
+      sendError(res, 'Only .pdf and .docx files are supported', 400); return;
+    }
+
+    if (!rawText.trim()) {
+      sendError(res, 'Could not extract text from the uploaded file', 422); return;
+    }
+
+    // Truncate to fit context (GPT-4o: 128k tokens, ~500k chars — be safe)
+    const textForAI = rawText.length > 40_000 ? rawText.slice(0, 40_000) + '\n… [truncated]' : rawText;
+
+    // ── GPT-4o: parse into structured report ──────────────────────────────
+    const aiRes = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: `You are an expert at parsing construction inspection reports.
+You will receive raw text from a legacy inspection report (extracted from PDF or Word).
+Your job is to parse it into a structured JSON format.
+
+Return a JSON object with this exact shape:
+{
+  "title": "string — report title extracted from the document",
+  "sections": [
+    {
+      "id": "kebab-case-id",
+      "title": "Section Title",
+      "content": "Full section text. Multiple paragraphs separated by \\n\\n.",
+      "findings": ["Finding 1", "Finding 2"],
+      "severity": "normal | warning | critical"
+    }
+  ],
+  "summary": {
+    "totalFindings": number,
+    "criticalCount": number,
+    "warningCount": number,
+    "normalCount": number,
+    "overallStatus": "Satisfactory | Requires Attention | Critical Issues Found"
+  }
+}
+
+Rules:
+- Extract ALL sections from the document (executive summary, site observations, defects, recommendations, etc.)
+- Classify each section severity based on the language used (critical defects → critical, minor issues → warning, no issues → normal)
+- Extract individual findings as concise bullet-point strings
+- Count findings accurately for the summary
+- Keep the original professional language`,
+        },
+        {
+          role: 'user',
+          content: `Parse this inspection report document:\n\n${textForAI}`,
+        },
+      ],
+    });
+
+    let parsedContent: ReportContent;
+    try {
+      parsedContent = JSON.parse(aiRes.choices[0]?.message?.content ?? '{}') as ReportContent;
+      if (!parsedContent.sections?.length) throw new Error('Empty sections');
+    } catch {
+      sendError(res, 'AI could not parse the report structure. Try a cleaner file.', 422); return;
+    }
+
+    // Create the report
+    const report = await prisma.inspectReport.create({
+      data: {
+        projectId,
+        userId,
+        title: parsedContent.title || `Imported Report — ${new Date().toLocaleDateString('en-IN')}`,
+        status: 'draft',
+        content: parsedContent as object,
+        rawMarkdown: textForAI,
+      },
+    });
+
+    // Add an audit note
+    await prisma.inspectReviewNote.create({
+      data: {
+        reportId: report.id,
+        userId,
+        type: 'status_change',
+        content: `Report imported from ${file.originalname} (${file.size} bytes) via Legacy Import. ${parsedContent.sections?.length ?? 0} sections detected.`,
+        toStatus: 'draft',
+        authorName: 'Biddaro Inspect AI',
+      },
+    });
+
+    sendCreated(res, report);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
 }
 
 export async function exportReportDocx(req: AuthenticatedRequest, res: Response): Promise<void> {
