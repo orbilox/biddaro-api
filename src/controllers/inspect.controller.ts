@@ -742,10 +742,19 @@ export async function updateReport(req: AuthenticatedRequest, res: Response): Pr
     const { id } = req.params;
     const report = await getOwnedReport(id, userId);
     if (!report) { sendNotFound(res, 'Report'); return; }
-    const { title, status, content, rawMarkdown } = req.body;
+    const { title, status, content, rawMarkdown, coverImage } = req.body;
+
+    // If only coverImage is being updated (no full content replacement), merge it in
+    let resolvedContent = content;
+    if (coverImage !== undefined && !content) {
+      resolvedContent = { ...(report.content as object), coverImage: coverImage || null };
+    } else if (content && coverImage !== undefined) {
+      // Content supplied along with explicit coverImage — embed it
+      resolvedContent = { ...content, coverImage: coverImage || null };
+    }
 
     // Auto-snapshot a new version whenever content changes
-    if (content) {
+    if (resolvedContent && resolvedContent !== report.content) {
       const latestVersion = await prisma.inspectReportVersion.findFirst({
         where: { reportId: id },
         orderBy: { versionNumber: 'desc' },
@@ -774,7 +783,7 @@ export async function updateReport(req: AuthenticatedRequest, res: Response): Pr
 
     const updated = await prisma.inspectReport.update({
       where: { id },
-      data: { title, status, content, rawMarkdown },
+      data: { title, status, content: resolvedContent, rawMarkdown },
     });
     sendSuccess(res, updated);
   } catch (err: any) {
@@ -2558,7 +2567,21 @@ export async function exportReportPdf(req: AuthenticatedRequest, res: Response):
         .map(r => r.value);
     }
 
-    const content = report.content as ReportContent;
+    // If a dedicated cover image URL is set, prepend it so it appears as the hero photo
+    const content = report.content as ReportContent & { coverImage?: string };
+    if (content.coverImage) {
+      try {
+        const ctrl = new AbortController();
+        const to = setTimeout(() => ctrl.abort(), 8000);
+        const r = await fetch(content.coverImage, { signal: ctrl.signal });
+        clearTimeout(to);
+        if (r.ok) {
+          const buf = Buffer.from(await r.arrayBuffer());
+          embeddedPhotos = [{ section: null, caption: null, buffer: buf }, ...embeddedPhotos];
+        }
+      } catch { /* cover image unavailable — ignore */ }
+    }
+
     const buffer  = await buildPdf(report, content, report.project, settings, embeddedPhotos.length > 0 ? embeddedPhotos : undefined, logoBuffer);
 
     const filename = `${report.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.pdf`;
