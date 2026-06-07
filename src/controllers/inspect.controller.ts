@@ -2548,18 +2548,29 @@ export async function exportReportPdf(req: AuthenticatedRequest, res: Response):
 export async function getDashboardStats(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const userId = req.user!.userId;
+    const now = new Date();
+    const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
     const [
       totalProjects,
       activeProjects,
       totalReports,
       draftReports,
       totalCaptures,
+      openTasks,
+      criticalTasks,
+      upcomingSchedulesCount,
     ] = await Promise.all([
       prisma.inspectProject.count({ where: { userId } }),
       prisma.inspectProject.count({ where: { userId, status: 'active' } }),
       prisma.inspectReport.count({ where: { userId } }),
       prisma.inspectReport.count({ where: { userId, status: 'draft' } }),
       prisma.inspectCapture.count({ where: { project: { userId } } }),
+      prisma.inspectTask.count({ where: { userId, status: { in: ['open', 'in_progress'] } } }),
+      prisma.inspectTask.count({ where: { userId, severity: 'critical', status: { not: 'done' } } }),
+      prisma.inspectSchedule.count({
+        where: { userId, status: 'pending', scheduledAt: { gte: now, lte: in7Days } },
+      }),
     ]);
 
     const recentProjects = await prisma.inspectProject.findMany({
@@ -2577,7 +2588,10 @@ export async function getDashboardStats(req: AuthenticatedRequest, res: Response
     });
 
     sendSuccess(res, {
-      stats: { totalProjects, activeProjects, totalReports, draftReports, totalCaptures },
+      stats: {
+        totalProjects, activeProjects, totalReports, draftReports, totalCaptures,
+        openTasks, criticalTasks, upcomingSchedulesCount,
+      },
       recentProjects,
       recentReports,
     });
