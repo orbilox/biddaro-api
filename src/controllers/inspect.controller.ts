@@ -661,6 +661,101 @@ export async function sendReport(req: AuthenticatedRequest, res: Response): Prom
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// TASKS — Create from findings, track to completion
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listTasks(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id: reportId } = req.params;
+    // Verify the report belongs to this user
+    const report = await getOwnedReport(reportId, userId);
+    if (!report) { sendNotFound(res, 'Report'); return; }
+
+    const tasks = await prisma.inspectTask.findMany({
+      where: { reportId },
+      orderBy: { createdAt: 'asc' },
+    });
+    sendSuccess(res, tasks);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function createTask(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id: reportId } = req.params;
+
+    const report = await prisma.inspectReport.findFirst({
+      where: { id: reportId, userId },
+      select: { id: true, projectId: true },
+    });
+    if (!report) { sendNotFound(res, 'Report'); return; }
+
+    const { title, description, severity, assignedTo, dueDate, sourceSection, sourceFinding } = req.body;
+    if (!title?.trim()) { sendError(res, 'title is required', 400); return; }
+
+    const task = await prisma.inspectTask.create({
+      data: {
+        userId,
+        reportId,
+        projectId: report.projectId,
+        title: title.trim(),
+        description: description?.trim() ?? null,
+        severity: severity ?? 'normal',
+        assignedTo: assignedTo?.trim() ?? null,
+        dueDate: dueDate ? new Date(dueDate) : null,
+        sourceSection: sourceSection ?? null,
+        sourceFinding: sourceFinding ?? null,
+      },
+    });
+    sendCreated(res, task);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function updateTask(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { tid } = req.params;
+
+    const existing = await prisma.inspectTask.findFirst({ where: { id: tid, userId } });
+    if (!existing) { sendNotFound(res, 'Task'); return; }
+
+    const { title, description, status, severity, assignedTo, dueDate } = req.body;
+    const task = await prisma.inspectTask.update({
+      where: { id: tid },
+      data: {
+        ...(title !== undefined && { title }),
+        ...(description !== undefined && { description }),
+        ...(status !== undefined && { status }),
+        ...(severity !== undefined && { severity }),
+        ...(assignedTo !== undefined && { assignedTo }),
+        ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
+      },
+    });
+    sendSuccess(res, task);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function deleteTask(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { tid } = req.params;
+    const existing = await prisma.inspectTask.findFirst({ where: { id: tid, userId } });
+    if (!existing) { sendNotFound(res, 'Task'); return; }
+    await prisma.inspectTask.delete({ where: { id: tid } });
+    sendSuccess(res, { deleted: true });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // PORTFOLIO SEARCH — Natural Language AI Assistant
 // ═══════════════════════════════════════════════════════════════════════════════
 

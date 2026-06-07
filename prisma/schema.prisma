@@ -83,6 +83,7 @@ model User {
   inspectTemplates       InspectTemplate[]
   inspectProjects        InspectProject[]
   inspectReports         InspectReport[]
+  inspectTasks           InspectTask[]
 }
 
 model Job {
@@ -441,7 +442,7 @@ model PMDiscussionReply {
   discussion   PMDiscussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
   authorId     String
   author       User         @relation("pmReplyAuthor", fields: [authorId], references: [id], onDelete: Cascade)
-  content      String
+  content      Json
   createdAt    DateTime     @default(now())
 }
 
@@ -1140,6 +1141,7 @@ model InspectProject {
   status      String           @default("active")   // active|completed|archived
   captures    InspectCapture[]
   reports     InspectReport[]
+  tasks       InspectTask[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -1177,9 +1179,34 @@ model InspectReport {
   pdfFileUrl   String?
   sentAt       DateTime?
   sentTo       String?
+  tasks        InspectTask[]
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
   @@index([projectId])
   @@index([userId])
+}
+
+model InspectTask {
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reportId      String
+  report        InspectReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  projectId     String
+  project       InspectProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  severity      String         @default("normal")   // normal|warning|critical
+  status        String         @default("open")      // open|in_progress|done
+  assignedTo    String?        // name or email of assignee
+  dueDate       DateTime?
+  sourceSection String?        // which report section this came from
+  sourceFinding String?        // exact finding text
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([reportId])
+  @@index([userId])
+  @@index([projectId])
 }

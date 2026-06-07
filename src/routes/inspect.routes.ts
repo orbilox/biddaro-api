@@ -15,6 +15,8 @@ import {
   captionCapture,
   // Portfolio search
   searchPortfolio,
+  // Tasks
+  listTasks, createTask, updateTask, deleteTask,
 } from '../controllers/inspect.controller';
 
 const router = Router();
@@ -55,5 +57,11 @@ router.put('/reports/:id',                    updateReport);
 router.delete('/reports/:id',                 deleteReport);
 router.post('/reports/:id/send',              sendReport);
 router.get('/reports/:id/export/docx',        exportReportDocx);
+
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+router.get('/reports/:id/tasks',    listTasks);
+router.post('/reports/:id/tasks',   createTask);
+router.put('/tasks/:tid',           updateTask);
+router.delete('/tasks/:tid',        deleteTask);
 
 export default router;
