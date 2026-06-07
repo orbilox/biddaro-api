@@ -28,6 +28,7 @@ import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
+import { sendInspectionReportEmail } from '../utils/email';
 import { getPagination } from '../utils/pagination';
 import type { AuthenticatedRequest } from '../types';
 
@@ -708,17 +709,58 @@ export async function sendReport(req: AuthenticatedRequest, res: Response): Prom
   try {
     const userId = req.user!.userId;
     const { id } = req.params;
-    const { sentTo } = req.body;
+    const { sentTo, clientName } = req.body;
     if (!sentTo) { sendError(res, 'sentTo email is required', 400); return; }
 
-    const report = await getOwnedReport(id, userId);
-    if (!report) { sendNotFound(res, 'Report'); return; }
+    // Load full report + project + user (inspector) for the email
+    const fullReport = await prisma.inspectReport.findFirst({
+      where: { id, userId },
+      include: {
+        project: { select: { name: true, location: true } },
+        user: { select: { firstName: true, lastName: true } },
+      },
+    });
+    if (!fullReport) { sendNotFound(res, 'Report'); return; }
 
     const updated = await prisma.inspectReport.update({
       where: { id },
       data: { status: 'sent', sentAt: new Date(), sentTo },
     });
-    // TODO: integrate email delivery (SendGrid / nodemailer)
+
+    // Parse content for summary metrics
+    const content = fullReport.content as {
+      sections?: Array<{ severity?: string; findings?: string[] }>;
+      summary?: { totalFindings?: number; criticalCount?: number; warningCount?: number; overallStatus?: string };
+    };
+    const sections = content?.sections ?? [];
+    const totalFindings = content?.summary?.totalFindings ?? sections.reduce((n, s) => n + (s.findings?.length ?? 0), 0);
+    const criticalCount = content?.summary?.criticalCount ?? sections.filter(s => s.severity === 'critical').length;
+    const warningCount  = content?.summary?.warningCount  ?? sections.filter(s => s.severity === 'warning').length;
+    const overallStatus = content?.summary?.overallStatus;
+
+    // Build public portal URL if sharing is enabled
+    const frontendUrl = process.env.FRONTEND_URL ?? 'https://biddaro.com';
+    const publicPortalUrl = fullReport.publicEnabled && fullReport.publicToken
+      ? `${frontendUrl}/inspect-share/${fullReport.publicToken}`
+      : undefined;
+
+    // Send email in background — don't block the response
+    const inspectorName = `${fullReport.user.firstName} ${fullReport.user.lastName}`;
+    sendInspectionReportEmail({
+      clientEmail: sentTo,
+      clientName: clientName ?? sentTo.split('@')[0],
+      inspectorName,
+      reportTitle: fullReport.title,
+      projectName: fullReport.project.name,
+      projectLocation: fullReport.project.location ?? undefined,
+      totalFindings,
+      criticalCount,
+      warningCount,
+      overallStatus,
+      publicPortalUrl,
+      reportDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }),
+    }).catch(err => console.error('[sendReport] email error:', err.message));
+
     sendSuccess(res, updated);
   } catch (err: any) {
     sendError(res, err.message);

@@ -437,6 +437,70 @@ export async function sendNewMessageEmail(opts: {
   });
 }
 
+/** Inspect: Send inspection report to client */
+export async function sendInspectionReportEmail(opts: {
+  clientEmail: string;
+  clientName: string;
+  inspectorName: string;
+  reportTitle: string;
+  projectName: string;
+  projectLocation?: string;
+  totalFindings: number;
+  criticalCount: number;
+  warningCount: number;
+  overallStatus?: string;
+  publicPortalUrl?: string;    // shareable link if enabled
+  reportDate: string;
+}): Promise<void> {
+  const {
+    clientEmail, clientName, inspectorName, reportTitle, projectName,
+    projectLocation, totalFindings, criticalCount, warningCount,
+    overallStatus, publicPortalUrl, reportDate,
+  } = opts;
+
+  const statusEmoji = overallStatus === 'pass' ? '✅' :
+                      overallStatus === 'fail' ? '🔴' : '⚠️';
+
+  const lines: string[] = [
+    `Dear ${clientName},`,
+    `Your inspection report <strong>"${reportTitle}"</strong> for <strong>${projectName}</strong>${projectLocation ? ` (${projectLocation})` : ''} has been completed and is ready for your review.`,
+    `<strong>Date:</strong> ${reportDate}<br/><strong>Inspector:</strong> ${inspectorName}<br/><strong>Overall Status:</strong> ${statusEmoji} ${overallStatus ?? 'Reviewed'}`,
+  ];
+
+  if (totalFindings > 0) {
+    const findingParts: string[] = [];
+    if (criticalCount > 0) findingParts.push(`<span style="color:#dc2626;font-weight:600;">${criticalCount} critical</span>`);
+    if (warningCount > 0) findingParts.push(`<span style="color:#d97706;font-weight:600;">${warningCount} warnings</span>`);
+    const normalCount = totalFindings - criticalCount - warningCount;
+    if (normalCount > 0) findingParts.push(`${normalCount} normal`);
+    lines.push(`<strong>Findings Summary:</strong> ${findingParts.join(', ')} (${totalFindings} total)`);
+  } else {
+    lines.push('No issues were found during this inspection. All areas are in acceptable condition.');
+  }
+
+  if (publicPortalUrl) {
+    lines.push(`You can view the full report, all sections, and detailed findings using the link below. No login is required.`);
+  } else {
+    lines.push(`Please contact your inspector to receive a copy of the detailed report.`);
+  }
+
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: clientEmail, name: clientName }],
+    subject: `Inspection Report Ready — ${projectName}`,
+    htmlContent: brandedHtml({
+      preheader: `Your inspection report for ${projectName} is ready. ${totalFindings} finding${totalFindings !== 1 ? 's' : ''} identified.`,
+      bodyTitle: `🏗️ Inspection Report Ready`,
+      bodyLines: lines,
+      ...(publicPortalUrl ? {
+        ctaLink: publicPortalUrl,
+        ctaLabel: 'View Full Report →',
+      } : {}),
+      footerNote: `This report was prepared by ${inspectorName} using Biddaro Inspect. Please keep this report for your records.`,
+    }),
+  });
+}
+
 /** 9. Loan application status update */
 export async function sendLoanStatusEmail(opts: {
   recipientEmail: string; recipientName: string;
