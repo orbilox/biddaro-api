@@ -515,7 +515,8 @@ Your writing is formal, factual, and professional — matching the style used by
 Structure your report according to the sections provided. For each section, write 2-4 paragraphs.
 Reference specific observations from the field capture data.
 Highlight defects and safety issues clearly with severity levels.
-${language !== 'en' ? `IMPORTANT: Write the entire report content in ${langName}. All section titles, findings, and prose MUST be written in ${langName}. Only the JSON keys (id, severity, etc.) stay in English.` : ''}
+For each section, provide specific recommended actions — practical, actionable steps the contractor or owner should take to rectify issues found. Be specific (e.g., "Re-grout tile joints in the bathroom with epoxy grout" not just "Fix tiles").
+${language !== 'en' ? `IMPORTANT: Write the entire report content in ${langName}. All section titles, findings, recommendations, and prose MUST be written in ${langName}. Only the JSON keys (id, severity, etc.) stay in English.` : ''}
 Return the report as a JSON object with this exact structure:
 {
   "title": "Inspection Report — [Project Name] — [Date]",
@@ -525,7 +526,8 @@ Return the report as a JSON object with this exact structure:
       "id": "section-id",
       "title": "Section Title",
       "content": "Full prose content for this section. Multiple paragraphs separated by \\n\\n.",
-      "findings": ["Finding 1", "Finding 2"],
+      "findings": ["Finding 1 — specific observation", "Finding 2 — specific observation"],
+      "recommendedActions": ["Action 1 — specific remediation step", "Action 2 — specific remediation step"],
       "severity": "normal|warning|critical"
     }
   ],
@@ -1409,6 +1411,24 @@ function buildDocx(
         }));
       });
     }
+
+    // Recommended actions
+    if (section.recommendedActions && section.recommendedActions.length > 0) {
+      children.push(new Paragraph({
+        spacing: { before: 160, after: 60 },
+        children: [new TextRun({ text: 'Recommended Actions', font: 'Arial', size: 22, bold: true, color: '1D6F42' })],
+      }));
+      section.recommendedActions.forEach((action) => {
+        children.push(new Paragraph({
+          spacing: { before: 60, after: 60 },
+          indent: { left: 360, hanging: 360 },
+          children: [
+            new TextRun({ text: '→  ', font: 'Arial', size: 22, bold: true, color: '1D6F42' }),
+            new TextRun({ text: action, font: 'Arial', size: 22, color: '2C2C2C' }),
+          ],
+        }));
+      });
+    }
   });
 
   // ── Sign-off ─────────────────────────────────────────────────────────────────
@@ -1836,6 +1856,26 @@ function buildPdf(
           doc.font('Helvetica').fontSize(10).fillColor(BODY)
             .text(section.findings[fi], LEFT + 24, y + 2, { width: WIDTH - 24, lineGap: 2 });
           y = doc.y + 6;
+        }
+      }
+
+      // Recommended actions
+      if (section.recommendedActions && section.recommendedActions.length > 0) {
+        if (y > 730) { doc.addPage(); y = TOP_MARGIN; }
+        y += 6;
+        doc.font('Helvetica-Bold').fontSize(9.5).fillColor('#1D6F42')
+          .text('Recommended Actions', LEFT, y);
+        y = doc.y + 4;
+
+        for (const action of section.recommendedActions) {
+          if (y > 750) { doc.addPage(); y = TOP_MARGIN; }
+          // Arrow bullet
+          doc.font('Helvetica-Bold').fontSize(11).fillColor('#1D6F42')
+            .text('→', LEFT, y, { width: 18, align: 'center' });
+          // Action text
+          doc.font('Helvetica').fontSize(10).fillColor(BODY)
+            .text(action, LEFT + 22, y, { width: WIDTH - 22, lineGap: 2 });
+          y = doc.y + 5;
         }
       }
 
