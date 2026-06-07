@@ -1966,6 +1966,7 @@ function buildPdf(
   project: { name: string; location: string | null; clientName: string | null },
   settings?: InspectorSettings | null,
   photos?: EmbeddedPhoto[],
+  logoBuffer?: Buffer | null,
 ): Promise<Buffer> {
   return new Promise<Buffer>((resolve, reject) => {
     const BRAND   = '#1E3A5F';
@@ -2029,7 +2030,7 @@ function buildPdf(
           .strokeColor(DIVIDER).lineWidth(0.5).stroke()
           .font('Helvetica').fontSize(7).fillColor('#999999')
           .text(project.name, LEFT, 36, { width: WIDTH / 2 })
-          .text('BIDDARO INSPECT', LEFT + WIDTH / 2, 36, { width: WIDTH / 2, align: 'right' })
+          .text(settings?.companyName || 'BIDDARO INSPECT', LEFT + WIDTH / 2, 36, { width: WIDTH / 2, align: 'right' })
         // Footer rule
           .moveTo(LEFT, 790).lineTo(RIGHT, 790)
           .strokeColor(DIVIDER).lineWidth(0.5).stroke()
@@ -2043,9 +2044,20 @@ function buildPdf(
     // Brand accent top bar
     doc.rect(LEFT - 50, 0, 595, 6).fill(BRAND);
 
-    // Brand name + subtitle
-    doc.font('Helvetica-Bold').fontSize(22).fillColor(BRAND)
-      .text('BIDDARO INSPECT', LEFT, 24, { width: WIDTH });
+    // Logo or brand name
+    const companyName = settings?.companyName || 'BIDDARO INSPECT';
+    if (logoBuffer) {
+      try {
+        doc.image(logoBuffer, LEFT, 12, { fit: [120, 40] });
+      } catch {
+        // fallback to text if image is corrupt
+        doc.font('Helvetica-Bold').fontSize(18).fillColor(BRAND)
+          .text(companyName, LEFT, 16, { width: 200 });
+      }
+    } else {
+      doc.font('Helvetica-Bold').fontSize(22).fillColor(BRAND)
+        .text('BIDDARO INSPECT', LEFT, 24, { width: WIDTH });
+    }
     doc.font('Helvetica').fontSize(10).fillColor('#666666')
       .text('AI-Powered Construction Inspection Report', LEFT, 52);
 
@@ -2324,6 +2336,25 @@ function buildPdf(
   });
 }
 
+/** Fetch a logo from a URL and return its Buffer (best-effort, returns null on failure). */
+async function fetchLogoBuffer(logoUrl: string | null | undefined): Promise<Buffer | null> {
+  if (!logoUrl) return null;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    try {
+      const res = await fetch(logoUrl, { signal: controller.signal });
+      if (!res.ok) return null;
+      const ab = await res.arrayBuffer();
+      return Buffer.from(ab);
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch {
+    return null;
+  }
+}
+
 export async function exportReportPdf(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const userId = req.user!.userId;
@@ -2341,6 +2372,9 @@ export async function exportReportPdf(req: AuthenticatedRequest, res: Response):
       prisma.inspectSettings.findUnique({ where: { userId } }),
     ]);
     if (!report) { sendNotFound(res, 'Report'); return; }
+
+    // Fetch company logo (best-effort — fall back to text if unavailable)
+    const logoBuffer = await fetchLogoBuffer(settings?.logoUrl);
 
     // Load photo captures and download buffers (best-effort, non-blocking failures)
     let embeddedPhotos: EmbeddedPhoto[] = [];
@@ -2375,7 +2409,7 @@ export async function exportReportPdf(req: AuthenticatedRequest, res: Response):
     }
 
     const content = report.content as ReportContent;
-    const buffer  = await buildPdf(report, content, report.project, settings, embeddedPhotos.length > 0 ? embeddedPhotos : undefined);
+    const buffer  = await buildPdf(report, content, report.project, settings, embeddedPhotos.length > 0 ? embeddedPhotos : undefined, logoBuffer);
 
     const filename = `${report.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
@@ -3248,8 +3282,9 @@ export async function bulkExportReports(req: AuthenticatedRequest, res: Response
     // Cap at 20 to prevent unbounded processing
     const safeIds = reportIds.slice(0, 20);
 
-    // Load inspector settings once
-    const settings = await prisma.inspectSettings.findUnique({ where: { userId } });
+    // Load inspector settings + logo once
+    const settings   = await prisma.inspectSettings.findUnique({ where: { userId } });
+    const logoBuffer = await fetchLogoBuffer(settings?.logoUrl);
 
     // Load all requested reports (ownership-checked in one query)
     const reports = await prisma.inspectReport.findMany({
@@ -3298,7 +3333,7 @@ export async function bulkExportReports(req: AuthenticatedRequest, res: Response
         }
 
         const content = report.content as ReportContent;
-        const buffer  = await buildPdf(report, content, report.project, settings, embeddedPhotos.length > 0 ? embeddedPhotos : undefined);
+        const buffer  = await buildPdf(report, content, report.project, settings, embeddedPhotos.length > 0 ? embeddedPhotos : undefined, logoBuffer);
 
         const safeName        = report.title.replace(/[^a-z0-9]/gi, '-').toLowerCase();
         const projectSafeName = report.project.name.replace(/[^a-z0-9]/gi, '-').toLowerCase();
