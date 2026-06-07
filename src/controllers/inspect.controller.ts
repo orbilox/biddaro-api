@@ -862,20 +862,44 @@ export async function sendReport(req: AuthenticatedRequest, res: Response): Prom
 
     // Send email in background — don't block the response
     const inspectorName = `${fullReport.user.firstName} ${fullReport.user.lastName}`;
-    sendInspectionReportEmail({
-      clientEmail: sentTo,
-      clientName: clientName ?? sentTo.split('@')[0],
-      inspectorName,
-      reportTitle: fullReport.title,
-      projectName: fullReport.project.name,
-      projectLocation: fullReport.project.location ?? undefined,
-      totalFindings,
-      criticalCount,
-      warningCount,
-      overallStatus,
-      publicPortalUrl,
-      reportDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }),
-    }).catch(err => console.error('[sendReport] email error:', err.message));
+    (async () => {
+      try {
+        // Generate PDF to attach (best-effort — if it fails, send without attachment)
+        let pdfBuffer: Buffer | null = null;
+        try {
+          const settings = await prisma.inspectSettings.findUnique({ where: { userId } });
+          const logoBuffer = await fetchLogoBuffer(settings?.logoUrl);
+          pdfBuffer = await buildPdf(
+            fullReport,
+            fullReport.content as ReportContent,
+            fullReport.project,
+            settings,
+            [],      // no embedded photos for email to keep size small
+            logoBuffer,
+          );
+        } catch (pdfErr: any) {
+          console.warn('[sendReport] PDF generation failed, sending without attachment:', pdfErr.message);
+        }
+
+        await sendInspectionReportEmail({
+          clientEmail: sentTo,
+          clientName: clientName ?? sentTo.split('@')[0],
+          inspectorName,
+          reportTitle: fullReport.title,
+          projectName: fullReport.project.name,
+          projectLocation: fullReport.project.location ?? undefined,
+          totalFindings,
+          criticalCount,
+          warningCount,
+          overallStatus,
+          publicPortalUrl,
+          reportDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }),
+          pdfBuffer,
+        });
+      } catch (err: any) {
+        console.error('[sendReport] email error:', err.message);
+      }
+    })();
 
     sendSuccess(res, updated);
   } catch (err: any) {

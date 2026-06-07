@@ -451,11 +451,12 @@ export async function sendInspectionReportEmail(opts: {
   overallStatus?: string;
   publicPortalUrl?: string;    // shareable link if enabled
   reportDate: string;
+  pdfBuffer?: Buffer | null;   // optional PDF attachment
 }): Promise<void> {
   const {
     clientEmail, clientName, inspectorName, reportTitle, projectName,
     projectLocation, totalFindings, criticalCount, warningCount,
-    overallStatus, publicPortalUrl, reportDate,
+    overallStatus, publicPortalUrl, reportDate, pdfBuffer,
   } = opts;
 
   const statusEmoji = overallStatus === 'pass' ? '✅' :
@@ -484,6 +485,14 @@ export async function sendInspectionReportEmail(opts: {
     lines.push(`Please contact your inspector to receive a copy of the detailed report.`);
   }
 
+  // Brevo attachment: base64-encoded PDF (max ~25 MB via API)
+  const attachments = pdfBuffer
+    ? [{
+        name: `${reportTitle.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.pdf`,
+        content: pdfBuffer.toString('base64'),
+      }]
+    : undefined;
+
   await brevoSend({
     sender: SENDER(),
     to: [{ email: clientEmail, name: clientName }],
@@ -498,6 +507,7 @@ export async function sendInspectionReportEmail(opts: {
       } : {}),
       footerNote: `This report was prepared by ${inspectorName} using Biddaro Inspect. Please keep this report for your records.`,
     }),
+    ...(attachments ? { attachment: attachments } : {}),
   });
 }
 
