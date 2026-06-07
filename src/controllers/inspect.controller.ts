@@ -428,10 +428,34 @@ export async function captionCapture(req: AuthenticatedRequest, res: Response): 
 // REPORT GENERATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Supported languages for multi-lingual report generation
+const SUPPORTED_LANGUAGES: Record<string, string> = {
+  en:  'English',
+  ar:  'Arabic (العربية)',
+  hi:  'Hindi (हिन्दी)',
+  fr:  'French (Français)',
+  es:  'Spanish (Español)',
+  zh:  'Chinese Simplified (中文)',
+  de:  'German (Deutsch)',
+  ur:  'Urdu (اردو)',
+  ta:  'Tamil (தமிழ்)',
+  te:  'Telugu (తెలుగు)',
+  ml:  'Malayalam (മലയാളം)',
+  bn:  'Bengali (বাংলা)',
+  pt:  'Portuguese (Português)',
+  ja:  'Japanese (日本語)',
+};
+
+export async function listLanguages(_req: AuthenticatedRequest, res: Response): Promise<void> {
+  sendSuccess(res, Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => ({ code, name })));
+}
+
 export async function generateReport(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const userId = req.user!.userId;
     const { id: projectId } = req.params;
+    const language = (req.body?.language as string) || 'en';
+    const langName = SUPPORTED_LANGUAGES[language] ?? 'English';
 
     const project = await prisma.inspectProject.findFirst({
       where: { id: projectId, userId },
@@ -490,9 +514,11 @@ Your writing is formal, factual, and professional — matching the style used by
 Structure your report according to the sections provided. For each section, write 2-4 paragraphs.
 Reference specific observations from the field capture data.
 Highlight defects and safety issues clearly with severity levels.
+${language !== 'en' ? `IMPORTANT: Write the entire report content in ${langName}. All section titles, findings, and prose MUST be written in ${langName}. Only the JSON keys (id, severity, etc.) stay in English.` : ''}
 Return the report as a JSON object with this exact structure:
 {
   "title": "Inspection Report — [Project Name] — [Date]",
+  "language": "${language}",
   "sections": [
     {
       "id": "section-id",

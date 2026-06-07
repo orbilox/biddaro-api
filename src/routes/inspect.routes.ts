@@ -12,7 +12,7 @@ import {
   listCaptures, addCapture, updateCapture, deleteCapture,
   // Reports
   generateReport, listReports, getReport, updateReport, deleteReport, sendReport,
-  exportReportDocx, exportReportPdf, importReport,
+  exportReportDocx, exportReportPdf, importReport, listLanguages,
   // Analytics
   getInspectAnalytics,
   // Floor plans
@@ -60,6 +60,7 @@ router.delete('/projects/:id/captures/:cid',        deleteCapture);
 router.post('/projects/:id/captures/:cid/caption',  captionCapture);
 
 // ── Reports ───────────────────────────────────────────────────────────────────
+router.get('/languages',                       listLanguages);      // Multi-lingual support
 router.post('/projects/:id/reports/generate', generateReport);   // AI generation
 router.post('/projects/:id/reports/import',   upload.single('file'), importReport); // Legacy import
 router.get('/projects/:id/reports',           listReports);
