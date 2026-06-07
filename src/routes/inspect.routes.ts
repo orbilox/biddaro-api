@@ -11,6 +11,8 @@ import {
   listCaptures, addCapture, updateCapture, deleteCapture,
   // Reports
   generateReport, listReports, getReport, updateReport, deleteReport, sendReport, exportReportDocx,
+  // Captioning
+  captionCapture,
 } from '../controllers/inspect.controller';
 
 const router = Router();
@@ -38,8 +40,9 @@ router.delete('/projects/:id',  deleteProject);
 // ── Captures (field observations per project) ─────────────────────────────────
 router.get('/projects/:id/captures',          listCaptures);
 router.post('/projects/:id/captures',         addCapture);
-router.put('/projects/:id/captures/:cid',     updateCapture);
-router.delete('/projects/:id/captures/:cid',  deleteCapture);
+router.put('/projects/:id/captures/:cid',           updateCapture);
+router.delete('/projects/:id/captures/:cid',        deleteCapture);
+router.post('/projects/:id/captures/:cid/caption',  captionCapture);
 
 // ── Reports ───────────────────────────────────────────────────────────────────
 router.post('/projects/:id/reports/generate', generateReport);   // AI generation

@@ -30,6 +30,38 @@ import type { AuthenticatedRequest } from '../types';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// ─── AI Photo Captioning ──────────────────────────────────────────────────────
+
+/**
+ * Uses GPT-4o Vision to generate an inspector-grade caption for a site photo.
+ * Returns a 2-3 sentence technical description focused on defects, materials,
+ * conditions and safety concerns visible in the image.
+ */
+async function captionImage(imageUrl: string): Promise<string> {
+  try {
+    const res = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: 'You are an expert construction and building inspector. Examine this site photo and write a 2-3 sentence technical caption from an inspector\'s perspective. Focus on: visible defects, material conditions, structural elements, safety hazards, measurements if visible, and severity of any issues. Be specific, factual and professional. Do not start with "The image shows" — go straight to the observation.',
+          },
+          {
+            type: 'image_url',
+            image_url: { url: imageUrl, detail: 'high' },
+          },
+        ],
+      }],
+    });
+    return res.choices[0]?.message?.content?.trim() ?? 'Photo recorded — no description available.';
+  } catch {
+    return 'Photo recorded — AI captioning unavailable.';
+  }
+}
+
 // ─── Ownership guards ─────────────────────────────────────────────────────────
 
 async function getOwnedProject(projectId: string, userId: string) {
@@ -359,6 +391,36 @@ export async function deleteCapture(req: AuthenticatedRequest, res: Response): P
   }
 }
 
+/**
+ * POST /inspect/projects/:id/captures/:cid/caption
+ * Runs GPT-4o Vision on the photo capture and saves the AI-generated caption
+ * to the capture's `content` field. Returns the updated capture.
+ */
+export async function captionCapture(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id: projectId, cid } = req.params;
+
+    const project = await getOwnedProject(projectId, userId);
+    if (!project) { sendNotFound(res, 'Project'); return; }
+
+    const capture = await prisma.inspectCapture.findFirst({ where: { id: cid, projectId } });
+    if (!capture) { sendNotFound(res, 'Capture'); return; }
+    if (capture.type !== 'photo' || !capture.imageUrl) {
+      sendError(res, 'AI captioning is only available for photo captures with an image URL', 400); return;
+    }
+
+    const aiCaption = await captionImage(capture.imageUrl);
+    const updated = await prisma.inspectCapture.update({
+      where: { id: cid },
+      data: { content: aiCaption },
+    });
+    sendSuccess(res, updated);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // REPORT GENERATION
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -380,13 +442,32 @@ export async function generateReport(req: AuthenticatedRequest, res: Response): 
       sendError(res, 'Add at least one field capture before generating a report', 400); return;
     }
 
+    // Auto-caption photos that have no text content yet
+    // Run all vision calls in parallel to minimise latency
+    const captionedCaptures = await Promise.all(
+      project.captures.map(async (c) => {
+        if (c.type === 'photo' && c.imageUrl && !c.content) {
+          const aiCaption = await captionImage(c.imageUrl);
+          return { ...c, content: aiCaption, _aiCaptioned: true };
+        }
+        return { ...c, _aiCaptioned: false };
+      })
+    );
+
+    // Persist any new AI captions back to the DB (fire-and-forget, don't block report generation)
+    const captionUpdates = captionedCaptures
+      .filter(c => c._aiCaptioned)
+      .map(c => prisma.inspectCapture.update({ where: { id: c.id }, data: { content: c.content } }));
+    if (captionUpdates.length > 0) Promise.all(captionUpdates).catch(() => {/* best-effort */});
+
     // Build the context for AI
-    const capturesSummary = project.captures.map((c, i) => {
+    const capturesSummary = captionedCaptures.map((c, i) => {
       const lines = [`[${i + 1}] Type: ${c.type.toUpperCase()} | Section: ${c.section ?? 'General'} | Severity: ${c.severity}`];
       if (c.content) lines.push(`  Content: ${c.content}`);
-      if (c.imageUrl) lines.push(`  Photo: ${c.imageUrl}`);
+      if (c.imageUrl) lines.push(`  Photo URL: ${c.imageUrl}`);
       if (c.annotation) lines.push(`  Annotation: ${c.annotation}`);
       if (c.gpsLat && c.gpsLng) lines.push(`  GPS: ${c.gpsLat.toFixed(6)}, ${c.gpsLng.toFixed(6)}`);
+      if ((c as typeof c & { _aiCaptioned: boolean })._aiCaptioned) lines.push(`  (Caption was AI-generated from photo)`);
       return lines.join('\n');
     }).join('\n\n');
 
