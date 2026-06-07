@@ -1189,6 +1189,8 @@ model InspectReport {
   sentTo        String?
   publicToken         String?   @unique   // random token for shareable client portal link
   publicEnabled       Boolean   @default(false)
+  publicExpiry        DateTime?           // optional expiry date for the share link
+  publicViewCount     Int       @default(0) // number of times the public link was viewed
   clientSignature     String?             // base64 encoded SVG path from signature pad
   clientSignedByName  String?             // signer's name as entered by client
   clientSignedAt      DateTime?           // timestamp when client signed

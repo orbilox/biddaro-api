@@ -975,10 +975,12 @@ export async function shareReport(req: AuthenticatedRequest, res: Response): Pro
 
     // Generate a stable public token if not already set
     const publicToken = report.publicToken ?? `${id}-${Date.now().toString(36)}`;
+    const expiryInput = req.body?.expiry as string | undefined;
+    const publicExpiry = expiryInput ? new Date(expiryInput) : null;
     const updated = await prisma.inspectReport.update({
       where: { id },
-      data: { publicToken, publicEnabled: true },
-      select: { id: true, publicToken: true, publicEnabled: true },
+      data: { publicToken, publicEnabled: true, ...(publicExpiry !== undefined ? { publicExpiry } : {}) },
+      select: { id: true, publicToken: true, publicEnabled: true, publicExpiry: true, publicViewCount: true },
     });
     sendSuccess(res, updated);
 
@@ -1039,10 +1041,24 @@ export async function getPublicReport(req: Request, res: Response): Promise<void
         clientSignature:    true,
         clientSignedByName: true,
         clientSignedAt:     true,
+        publicExpiry:       true,
+        publicViewCount:    true,
         project:            { select: { name: true, location: true, clientName: true } },
       },
     });
     if (!report) { sendNotFound(res, 'Report'); return; }
+
+    // Check expiry
+    if (report.publicExpiry && new Date(report.publicExpiry) < new Date()) {
+      sendError(res, 'This report link has expired', 410); return;
+    }
+
+    // Increment view count (fire-and-forget)
+    prisma.inspectReport.update({
+      where: { id: report.id },
+      data: { publicViewCount: { increment: 1 } },
+    }).catch(() => {});
+
     sendSuccess(res, report);
   } catch (err: any) {
     sendError(res, err.message);
