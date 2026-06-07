@@ -607,3 +607,39 @@ export async function sendInspectSignatureNotificationEmail(opts: {
     }),
   });
 }
+
+export async function sendScheduleReminderEmail(opts: {
+  toEmail: string;
+  toName: string;
+  scheduleTitle: string;
+  projectName: string;
+  projectLocation: string | null;
+  scheduledAt: Date;
+  notes: string | null;
+  dashboardUrl: string;
+}): Promise<void> {
+  const { toEmail, toName, scheduleTitle, projectName, projectLocation, scheduledAt, notes, dashboardUrl } = opts;
+  const dateStr = scheduledAt.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const timeStr = scheduledAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const location = projectLocation ? ` at ${projectLocation}` : '';
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: toEmail, name: toName }],
+    subject: `🗓️ Reminder: Upcoming Inspection Tomorrow — ${projectName}`,
+    htmlContent: brandedHtml({
+      preheader: `Your inspection "${scheduleTitle}" for ${projectName} is scheduled for tomorrow.`,
+      bodyTitle: '🗓️ Upcoming Inspection Reminder',
+      bodyLines: [
+        `Hi ${toName},`,
+        `This is a reminder that the following inspection is coming up tomorrow:`,
+        `<strong>${scheduleTitle}</strong><br/>Project: ${projectName}${location}<br/>Date & Time: ${dateStr}, ${timeStr}`,
+        ...(notes ? [`<strong>Preparation Notes:</strong><br/>${notes}`] : []),
+        `Make sure your inspection tools, checklists, and field capture app are ready.`,
+        `Log in to your Biddaro Inspect dashboard to review the project details and previous reports before the visit.`,
+      ],
+      ctaLink: dashboardUrl,
+      ctaLabel: 'View Project in Dashboard →',
+      footerNote: 'This reminder was sent by Biddaro Inspect. To stop receiving reminders, remove the notification email from the schedule.',
+    }),
+  });
+}

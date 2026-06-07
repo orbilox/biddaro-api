@@ -33,6 +33,7 @@ import {
   sendInspectionReportEmail,
   sendInspectShareLinkEmail,
   sendInspectSignatureNotificationEmail,
+  sendScheduleReminderEmail,
 } from '../utils/email';
 import { getPagination } from '../utils/pagination';
 import type { AuthenticatedRequest } from '../types';
@@ -3089,9 +3090,91 @@ export async function listUpcomingSchedules(req: AuthenticatedRequest, res: Resp
     });
 
     sendSuccess(res, { schedules });
+
+    // Fire-and-forget: check if any upcoming schedules need reminder emails
+    processScheduleReminders(userId).catch(() => { /* silent */ });
   } catch (err: any) {
     sendError(res, err.message);
   }
+}
+
+/**
+ * POST /inspect/schedules/reminders
+ * Manually trigger reminder processing (useful for cron job).
+ * Also called fire-and-forget from listUpcomingSchedules on each dashboard load.
+ */
+export async function triggerScheduleReminders(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const sent = await processScheduleReminders(userId);
+    sendSuccess(res, { sent });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+/**
+ * Finds schedules due within the next 24–48 hours that haven't received a reminder,
+ * sends reminder emails, and marks each as reminded.
+ * Returns the count of reminders sent.
+ */
+async function processScheduleReminders(userId: string): Promise<number> {
+  const now       = new Date();
+  const in24h     = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const in48h     = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+  // Find pending schedules in the 24–48h window with a notifyEmail set,
+  // and where a reminder hasn't been sent yet (or was sent > 23h ago to avoid
+  // accidental duplicates from frequent dashboard checks)
+  const schedules = await prisma.inspectSchedule.findMany({
+    where: {
+      userId,
+      status: 'pending',
+      notifyEmail: { not: null },
+      scheduledAt: { gte: in24h, lte: in48h },
+      OR: [
+        { reminderSentAt: null },
+        { reminderSentAt: { lt: new Date(now.getTime() - 23 * 60 * 60 * 1000) } },
+      ],
+    },
+    include: {
+      project: { select: { name: true, location: true } },
+      user:    { select: { firstName: true, lastName: true } },
+    },
+  });
+
+  let sent = 0;
+  const frontendUrl = process.env.FRONTEND_URL || 'https://biddaro.com';
+
+  for (const s of schedules) {
+    try {
+      const inspectorName = s.user
+        ? `${s.user.firstName} ${s.user.lastName}`.trim()
+        : 'Inspector';
+
+      await sendScheduleReminderEmail({
+        toEmail:         s.notifyEmail!,
+        toName:          inspectorName,
+        scheduleTitle:   s.title,
+        projectName:     s.project.name,
+        projectLocation: s.project.location,
+        scheduledAt:     s.scheduledAt,
+        notes:           s.notes,
+        dashboardUrl:    `${frontendUrl}/inspect/projects`,
+      });
+
+      await prisma.inspectSchedule.update({
+        where: { id: s.id },
+        data:  { reminderSentAt: now },
+      });
+
+      sent++;
+    } catch {
+      // don't abort other schedules on individual failure
+    }
+  }
+
+  return sent;
 }
 
 // ─── Inspection Completion Certificate ───────────────────────────────────────

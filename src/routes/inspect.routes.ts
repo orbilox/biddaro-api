@@ -39,6 +39,8 @@ import {
   bulkExportReports,
   // AI trend summary
   generateTrendSummary,
+  // Schedule reminders
+  triggerScheduleReminders,
 } from '../controllers/inspect.controller';
 
 const router = Router();
@@ -119,6 +121,7 @@ router.delete('/tasks/:tid',        deleteTask);
 
 // ── Schedules ─────────────────────────────────────────────────────────────────
 router.get('/schedules/upcoming',                listUpcomingSchedules);
+router.post('/schedules/reminders',              triggerScheduleReminders);
 router.get('/projects/:projectId/schedules',     listSchedules);
 router.post('/projects/:projectId/schedules',    createSchedule);
 router.put('/schedules/:sid',                    updateSchedule);

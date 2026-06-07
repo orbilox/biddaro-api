@@ -1299,6 +1299,7 @@ model InspectSchedule {
   status        String         @default("pending")     // pending|completed|cancelled
   recurrence    String?                                // none|weekly|monthly|quarterly
   completedAt   DateTime?
+  reminderSentAt DateTime?                             // When last reminder email was sent
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
