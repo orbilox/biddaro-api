@@ -917,17 +917,54 @@ export async function getPublicReport(req: Request, res: Response): Promise<void
     const report = await prisma.inspectReport.findFirst({
       where: { publicToken: token, publicEnabled: true },
       select: {
-        id:          true,
-        title:       true,
-        status:      true,
-        content:     true,
-        rawMarkdown: true,
-        createdAt:   true,
-        project:     { select: { name: true, location: true, clientName: true } },
+        id:                 true,
+        title:              true,
+        status:             true,
+        content:            true,
+        rawMarkdown:        true,
+        createdAt:          true,
+        clientSignature:    true,
+        clientSignedByName: true,
+        clientSignedAt:     true,
+        project:            { select: { name: true, location: true, clientName: true } },
       },
     });
     if (!report) { sendNotFound(res, 'Report'); return; }
     sendSuccess(res, report);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function signPublicReport(req: Request, res: Response): Promise<void> {
+  try {
+    const { token } = req.params;
+    const { signerName, signatureData } = req.body;
+
+    if (!signerName?.trim()) { sendError(res, 'Signer name is required', 400); return; }
+    if (!signatureData)       { sendError(res, 'Signature data is required', 400); return; }
+
+    const report = await prisma.inspectReport.findFirst({
+      where: { publicToken: token, publicEnabled: true },
+    });
+    if (!report) { sendNotFound(res, 'Report'); return; }
+    if (report.clientSignedAt) { sendError(res, 'Report has already been signed', 409); return; }
+
+    const updated = await prisma.inspectReport.update({
+      where: { id: report.id },
+      data: {
+        clientSignature:    signatureData,
+        clientSignedByName: signerName.trim(),
+        clientSignedAt:     new Date(),
+        status:             report.status === 'draft' ? 'approved' : report.status,
+      },
+    });
+
+    sendSuccess(res, {
+      signed: true,
+      signedAt: updated.clientSignedAt,
+      signerName: updated.clientSignedByName,
+    });
   } catch (err: any) {
     sendError(res, err.message);
   }
@@ -1342,6 +1379,8 @@ function buildDocx(
     id: string; title: string; status: string; createdAt: Date;
     sentAt: Date | null; sentTo: string | null;
     user?: { firstName: string; lastName: string };
+    clientSignedByName?: string | null;
+    clientSignedAt?: Date | null;
   },
   content: ReportContent,
   project: { name: string; location: string | null; clientName: string | null },
@@ -1594,6 +1633,42 @@ function buildDocx(
   );
   children.push(...signoffLines);
 
+  // Client Acknowledgement / Digital Signature block
+  if (report.clientSignedAt && report.clientSignedByName) {
+    const signDateStr = new Date(report.clientSignedAt).toLocaleDateString('en-IN', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+    children.push(
+      new Paragraph({ spacing: { before: 480, after: 0 }, children: [] }),
+      new Paragraph({
+        spacing: { before: 0, after: 160 },
+        border: { top: { style: BorderStyle.SINGLE, size: 2, color: DIVIDER, space: 4 } },
+        children: [new TextRun({ text: 'Client Acknowledgement', font: 'Arial', size: 24, bold: true, color: BRAND })],
+      }),
+      new Paragraph({
+        spacing: { before: 60, after: 60 },
+        children: [
+          new TextRun({ text: 'Digitally signed by: ', font: 'Arial', size: 20, bold: true }),
+          new TextRun({ text: report.clientSignedByName, font: 'Arial', size: 20, color: BRAND }),
+        ],
+      }),
+      new Paragraph({
+        spacing: { before: 0, after: 60 },
+        children: [
+          new TextRun({ text: 'Date signed: ', font: 'Arial', size: 20, bold: true }),
+          new TextRun({ text: signDateStr, font: 'Arial', size: 20 }),
+        ],
+      }),
+      new Paragraph({
+        spacing: { before: 60, after: 0 },
+        children: [new TextRun({
+          text: 'By signing above, the client acknowledges receipt of this inspection report and confirms the findings have been reviewed.',
+          font: 'Arial', size: 18, italics: true, color: '888888',
+        })],
+      }),
+    );
+  }
+
   const doc = new Document({
     styles: {
       default: {
@@ -1810,6 +1885,8 @@ function buildPdf(
     id: string; title: string; status: string; createdAt: Date;
     sentAt: Date | null; sentTo: string | null;
     user?: { firstName: string; lastName: string };
+    clientSignedByName?: string | null;
+    clientSignedAt?: Date | null;
   },
   content: ReportContent,
   project: { name: string; location: string | null; clientName: string | null },
@@ -2035,6 +2112,34 @@ function buildPdf(
         doc.moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor(DIVIDER).lineWidth(0.5).stroke();
         y += 16;
       }
+    }
+
+    // ── Client Acknowledgement (when signed) ───────────────────────────────
+    if (report.clientSignedAt && report.clientSignedByName) {
+      if (y > 660) { doc.addPage(); y = TOP_MARGIN; }
+      y += 24;
+      doc.rect(LEFT, y, WIDTH, 1).fillColor(DIVIDER).fill();
+      y += 12;
+      doc.font('Helvetica-Bold').fontSize(11).fillColor(BRAND)
+        .text('Client Acknowledgement', LEFT, y);
+      y += 20;
+      doc.moveTo(LEFT, y).lineTo(LEFT + 160, y).strokeColor('#444444').lineWidth(0.5).stroke();
+      y += 6;
+      doc.font('Helvetica').fontSize(9).fillColor('#888888')
+        .text('Client Signature', LEFT, y);
+      y += 14;
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(BRAND)
+        .text(report.clientSignedByName, LEFT, y);
+      y += 14;
+      const signDateStr = report.clientSignedAt.toLocaleDateString('en-GB', {
+        day: '2-digit', month: 'long', year: 'numeric',
+      });
+      doc.font('Helvetica').fontSize(9).fillColor('#555555')
+        .text(`Date signed: ${signDateStr}`, LEFT, y);
+      y += 14;
+      doc.font('Helvetica').fontSize(7.5).fillColor('#AAAAAA')
+        .text('This document has been digitally acknowledged by the client via the Biddaro Inspect secure client portal.', LEFT, y, { width: WIDTH });
+      y += 30;
     }
 
     // ── Sign-off ───────────────────────────────────────────────────────────

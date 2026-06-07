@@ -1186,8 +1186,11 @@ model InspectReport {
   pdfFileUrl   String?
   sentAt        DateTime?
   sentTo        String?
-  publicToken   String?   @unique   // random token for shareable client portal link
-  publicEnabled Boolean   @default(false)
+  publicToken         String?   @unique   // random token for shareable client portal link
+  publicEnabled       Boolean   @default(false)
+  clientSignature     String?             // base64 encoded SVG path from signature pad
+  clientSignedByName  String?             // signer's name as entered by client
+  clientSignedAt      DateTime?           // timestamp when client signed
   tasks         InspectTask[]
   reviewNotes   InspectReviewNote[]
   versions      InspectReportVersion[]
