@@ -11,6 +11,8 @@ import {
   listCaptures, addCapture, updateCapture, deleteCapture,
   // Reports
   generateReport, listReports, getReport, updateReport, deleteReport, sendReport, exportReportDocx, exportReportPdf,
+  // Analytics
+  getInspectAnalytics,
   // Captioning
   captionCapture,
   // Portfolio search
@@ -26,6 +28,7 @@ router.use(authenticate);
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 router.get('/dashboard',  getDashboardStats);
+router.get('/analytics',  getInspectAnalytics);
 router.post('/search',    searchPortfolio);
 
 // ── Templates ─────────────────────────────────────────────────────────────────

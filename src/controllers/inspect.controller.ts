@@ -1518,3 +1518,153 @@ export async function getDashboardStats(req: AuthenticatedRequest, res: Response
     sendError(res, err.message);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ANALYTICS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function getInspectAnalytics(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+
+    // Fetch all reports with their content and project name
+    const allReports = await prisma.inspectReport.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true, title: true, status: true, createdAt: true,
+        content: true,
+        project: { select: { name: true, location: true } },
+      },
+    });
+
+    // Fetch all tasks
+    const allTasks = await prisma.inspectTask.findMany({
+      where: { userId },
+      select: { id: true, status: true, severity: true, createdAt: true, dueDate: true },
+    });
+
+    // Fetch captures for type breakdown
+    const allCaptures = await prisma.inspectCapture.findMany({
+      where: { project: { userId } },
+      select: { type: true, severity: true, createdAt: true },
+    });
+
+    // ── Severity distribution across all findings ─────────────────────────
+    let criticalCount = 0, warningCount = 0, normalCount = 0;
+    for (const report of allReports) {
+      const c = report.content as ReportContent | null;
+      if (!c?.summary) continue;
+      criticalCount += c.summary.criticalCount ?? 0;
+      warningCount  += c.summary.warningCount  ?? 0;
+      normalCount   += c.summary.normalCount   ?? 0;
+    }
+
+    // ── Reports over time (last 6 months, grouped by month) ───────────────
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+    sixMonthsAgo.setDate(1);
+    sixMonthsAgo.setHours(0, 0, 0, 0);
+
+    const monthMap: Record<string, { reports: number; critical: number; warning: number }> = {};
+    for (let i = 0; i < 6; i++) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - (5 - i));
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      monthMap[key] = { reports: 0, critical: 0, warning: 0 };
+    }
+
+    for (const r of allReports) {
+      const d = new Date(r.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!monthMap[key]) continue;
+      monthMap[key].reports++;
+      const c = r.content as ReportContent | null;
+      if (c?.summary) {
+        monthMap[key].critical += c.summary.criticalCount ?? 0;
+        monthMap[key].warning  += c.summary.warningCount  ?? 0;
+      }
+    }
+
+    const reportsOverTime = Object.entries(monthMap).map(([month, vals]) => ({
+      month,
+      label: new Date(month + '-01').toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }),
+      ...vals,
+    }));
+
+    // ── Report status breakdown ────────────────────────────────────────────
+    const statusCounts: Record<string, number> = { draft: 0, review: 0, approved: 0, sent: 0 };
+    for (const r of allReports) {
+      statusCounts[r.status] = (statusCounts[r.status] ?? 0) + 1;
+    }
+    const reportsByStatus = Object.entries(statusCounts).map(([status, count]) => ({ status, count }));
+
+    // ── Top projects by findings count ────────────────────────────────────
+    const projectFindings: Record<string, { name: string; critical: number; warning: number; normal: number; reports: number }> = {};
+    for (const r of allReports) {
+      const pid = r.project.name;
+      if (!projectFindings[pid]) {
+        projectFindings[pid] = { name: pid, critical: 0, warning: 0, normal: 0, reports: 0 };
+      }
+      projectFindings[pid].reports++;
+      const c = r.content as ReportContent | null;
+      if (c?.summary) {
+        projectFindings[pid].critical += c.summary.criticalCount ?? 0;
+        projectFindings[pid].warning  += c.summary.warningCount  ?? 0;
+        projectFindings[pid].normal   += c.summary.normalCount   ?? 0;
+      }
+    }
+    const topProjects = Object.values(projectFindings)
+      .sort((a, b) => (b.critical + b.warning) - (a.critical + a.warning))
+      .slice(0, 8);
+
+    // ── Capture type breakdown ─────────────────────────────────────────────
+    const captureTypes: Record<string, number> = {};
+    for (const c of allCaptures) {
+      captureTypes[c.type] = (captureTypes[c.type] ?? 0) + 1;
+    }
+    const capturesByType = Object.entries(captureTypes).map(([type, count]) => ({ type, count }));
+
+    // ── Task metrics ───────────────────────────────────────────────────────
+    const tasksByStatus: Record<string, number> = { open: 0, in_progress: 0, done: 0 };
+    const tasksBySeverity: Record<string, number> = { normal: 0, warning: 0, critical: 0 };
+    let overdueTasks = 0;
+    const now = new Date();
+    for (const t of allTasks) {
+      tasksByStatus[t.status]   = (tasksByStatus[t.status]   ?? 0) + 1;
+      tasksBySeverity[t.severity] = (tasksBySeverity[t.severity] ?? 0) + 1;
+      if (t.dueDate && new Date(t.dueDate) < now && t.status !== 'done') overdueTasks++;
+    }
+
+    // ── Overall health score (0–100) ──────────────────────────────────────
+    // Formula: 100 - (critical*10 + warning*3) / max(1, total findings) * 10
+    // Clamped to [0, 100]
+    const totalFindings = criticalCount + warningCount + normalCount;
+    const penaltyRaw = totalFindings > 0
+      ? ((criticalCount * 10 + warningCount * 3) / totalFindings) * 10
+      : 0;
+    const healthScore = Math.max(0, Math.min(100, Math.round(100 - penaltyRaw)));
+
+    sendSuccess(res, {
+      overview: {
+        totalReports: allReports.length,
+        totalFindings,
+        criticalCount,
+        warningCount,
+        normalCount,
+        healthScore,
+        overdueTasks,
+        openTasks: tasksByStatus.open ?? 0,
+        totalTasks: allTasks.length,
+      },
+      reportsOverTime,
+      reportsByStatus,
+      topProjects,
+      capturesByType,
+      tasksByStatus: Object.entries(tasksByStatus).map(([status, count]) => ({ status, count })),
+      tasksBySeverity: Object.entries(tasksBySeverity).map(([severity, count]) => ({ severity, count })),
+    });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
