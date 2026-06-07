@@ -566,15 +566,36 @@ export async function generateReport(req: AuthenticatedRequest, res: Response): 
       return lines.join('\n');
     }).join('\n\n');
 
+    // Template variable resolver — replaces {{variable}} tokens with project data
+    const now = new Date();
+    const templateVars: Record<string, string> = {
+      project_name:    project.name,
+      client_name:     project.clientName ?? 'Client',
+      location:        project.location ?? '',
+      date:            now.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }),
+      year:            String(now.getFullYear()),
+      month:           now.toLocaleDateString('en-IN', { month: 'long' }),
+      inspector:       '',  // filled from settings if needed
+    };
+    function resolveVars(text: string): string {
+      return text.replace(/\{\{(\w+)\}\}/g, (_, key: string) => templateVars[key] ?? `{{${key}}}`);
+    }
+
     // Get template structure
     const templateStructure = effectiveTemplate?.structure as { sections?: Array<{ id: string; title: string; description: string }> } | null;
-    const sections = templateStructure?.sections ?? [
+    const rawSections = templateStructure?.sections ?? [
       { id: 'executive-summary', title: 'Executive Summary', description: 'Overview of findings' },
       { id: 'site-observations', title: 'Site Observations', description: 'Detailed on-site observations' },
       { id: 'defects-findings', title: 'Defects & Findings', description: 'Issues identified' },
       { id: 'recommendations', title: 'Recommendations', description: 'Required actions' },
       { id: 'conclusion', title: 'Conclusion', description: 'Summary and sign-off' },
     ];
+    // Apply template variable substitution to section titles and descriptions
+    const sections = rawSections.map(s => ({
+      ...s,
+      title:       resolveVars(s.title),
+      description: resolveVars(s.description ?? ''),
+    }));
 
     const systemPrompt = `You are a professional inspection report writer for construction and engineering projects.
 You write clear, precise, technical inspection reports based on field observations.
