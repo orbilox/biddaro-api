@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url = env("DATABASE_URL")
 }
 
 model User {
@@ -444,7 +444,7 @@ model PMDiscussionReply {
   discussion   PMDiscussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
   authorId     String
   author       User         @relation("pmReplyAuthor", fields: [authorId], references: [id], onDelete: Cascade)
-  content      Json
+  content      String
   createdAt    DateTime     @default(now())
 }
 
@@ -1180,12 +1180,14 @@ model InspectReport {
   rawMarkdown  String?        // full text for export
   wordFileUrl  String?
   pdfFileUrl   String?
-  sentAt       DateTime?
-  sentTo       String?
-  tasks        InspectTask[]
-  reviewNotes  InspectReviewNote[]
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  sentAt        DateTime?
+  sentTo        String?
+  publicToken   String?   @unique   // random token for shareable client portal link
+  publicEnabled Boolean   @default(false)
+  tasks         InspectTask[]
+  reviewNotes   InspectReviewNote[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([projectId])
   @@index([userId])

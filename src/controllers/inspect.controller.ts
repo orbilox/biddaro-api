@@ -16,7 +16,7 @@
  *              POST      /inspect/reports/:id/send
  */
 
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import OpenAI from 'openai';
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
@@ -720,6 +720,71 @@ export async function sendReport(req: AuthenticatedRequest, res: Response): Prom
     });
     // TODO: integrate email delivery (SendGrid / nodemailer)
     sendSuccess(res, updated);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CLIENT PORTAL — Shareable public link for approved/sent reports
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function shareReport(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+    const report = await getOwnedReport(id, userId);
+    if (!report) { sendNotFound(res, 'Report'); return; }
+
+    // Generate a stable public token if not already set
+    const publicToken = report.publicToken ?? `${id}-${Date.now().toString(36)}`;
+    const updated = await prisma.inspectReport.update({
+      where: { id },
+      data: { publicToken, publicEnabled: true },
+      select: { id: true, publicToken: true, publicEnabled: true },
+    });
+    sendSuccess(res, updated);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function unshareReport(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+    const report = await getOwnedReport(id, userId);
+    if (!report) { sendNotFound(res, 'Report'); return; }
+
+    const updated = await prisma.inspectReport.update({
+      where: { id },
+      data: { publicEnabled: false },
+      select: { id: true, publicToken: true, publicEnabled: true },
+    });
+    sendSuccess(res, updated);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// Public endpoint — no auth required
+export async function getPublicReport(req: Request, res: Response): Promise<void> {
+  try {
+    const { token } = req.params;
+    const report = await prisma.inspectReport.findFirst({
+      where: { publicToken: token, publicEnabled: true },
+      select: {
+        id:          true,
+        title:       true,
+        status:      true,
+        content:     true,
+        rawMarkdown: true,
+        createdAt:   true,
+        project:     { select: { name: true, location: true, clientName: true } },
+      },
+    });
+    if (!report) { sendNotFound(res, 'Report'); return; }
+    sendSuccess(res, report);
   } catch (err: any) {
     sendError(res, err.message);
   }

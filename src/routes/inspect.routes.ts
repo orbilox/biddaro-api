@@ -13,6 +13,8 @@ import {
   // Reports
   generateReport, listReports, listAllReports, getReport, updateReport, deleteReport, sendReport,
   exportReportDocx, exportReportPdf, importReport, listLanguages,
+  // Client portal (public share)
+  shareReport, unshareReport, getPublicReport,
   // Analytics
   getInspectAnalytics,
   // Floor plans
@@ -30,7 +32,10 @@ import {
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
-// All inspect routes require authentication
+// ── Public endpoints (no auth) ────────────────────────────────────────────────
+router.get('/public/:token', getPublicReport);
+
+// All other inspect routes require authentication
 router.use(authenticate);
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -69,6 +74,8 @@ router.get('/reports/:id',                    getReport);
 router.put('/reports/:id',                    updateReport);
 router.delete('/reports/:id',                 deleteReport);
 router.post('/reports/:id/send',              sendReport);
+router.post('/reports/:id/share',             shareReport);    // enable public link
+router.delete('/reports/:id/share',           unshareReport);  // disable public link
 router.get('/reports/:id/export/docx',        exportReportDocx);
 router.get('/reports/:id/export/pdf',         exportReportPdf);
 
