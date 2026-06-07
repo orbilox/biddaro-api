@@ -2405,3 +2405,126 @@ export async function getInspectAnalytics(req: AuthenticatedRequest, res: Respon
     sendError(res, err.message);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INSPECTION SCHEDULING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listSchedules(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { projectId } = req.params;
+
+    // Verify project ownership
+    const project = await prisma.inspectProject.findFirst({ where: { id: projectId, userId } });
+    if (!project) { sendNotFound(res, 'Project'); return; }
+
+    const schedules = await prisma.inspectSchedule.findMany({
+      where: { projectId, userId },
+      orderBy: { scheduledAt: 'asc' },
+    });
+
+    sendSuccess(res, { schedules });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function createSchedule(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { projectId } = req.params;
+    const { scheduledAt, title, notes, notifyEmail, recurrence } = req.body;
+
+    if (!scheduledAt || !title) { sendError(res, 'scheduledAt and title are required', 400); return; }
+
+    const project = await prisma.inspectProject.findFirst({ where: { id: projectId, userId } });
+    if (!project) { sendNotFound(res, 'Project'); return; }
+
+    const schedule = await prisma.inspectSchedule.create({
+      data: {
+        projectId,
+        userId,
+        scheduledAt: new Date(scheduledAt),
+        title,
+        notes: notes ?? null,
+        notifyEmail: notifyEmail ?? null,
+        recurrence: recurrence ?? 'none',
+        status: 'pending',
+      },
+    });
+
+    sendCreated(res, schedule);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function updateSchedule(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { sid } = req.params;
+    const { scheduledAt, title, notes, notifyEmail, recurrence, status } = req.body;
+
+    const existing = await prisma.inspectSchedule.findFirst({ where: { id: sid, userId } });
+    if (!existing) { sendNotFound(res, 'Schedule'); return; }
+
+    const updated = await prisma.inspectSchedule.update({
+      where: { id: sid },
+      data: {
+        ...(scheduledAt ? { scheduledAt: new Date(scheduledAt) } : {}),
+        ...(title       ? { title }        : {}),
+        ...(notes !== undefined  ? { notes }  : {}),
+        ...(notifyEmail !== undefined ? { notifyEmail } : {}),
+        ...(recurrence  ? { recurrence }   : {}),
+        ...(status      ? {
+            status,
+            completedAt: status === 'completed' ? new Date() : null,
+          } : {}),
+      },
+    });
+
+    sendSuccess(res, { schedule: updated });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function deleteSchedule(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { sid } = req.params;
+
+    const existing = await prisma.inspectSchedule.findFirst({ where: { id: sid, userId } });
+    if (!existing) { sendNotFound(res, 'Schedule'); return; }
+
+    await prisma.inspectSchedule.delete({ where: { id: sid } });
+    sendSuccess(res, { deleted: true });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function listUpcomingSchedules(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const now = new Date();
+
+    const schedules = await prisma.inspectSchedule.findMany({
+      where: {
+        userId,
+        status: 'pending',
+        scheduledAt: { gte: now },
+      },
+      orderBy: { scheduledAt: 'asc' },
+      take: 10,
+      include: {
+        project: { select: { id: true, name: true, location: true } },
+      },
+    });
+
+    sendSuccess(res, { schedules });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}

@@ -15,6 +15,8 @@ import {
   exportReportDocx, exportReportPdf, importReport, listLanguages,
   // Client portal (public share)
   shareReport, unshareReport, getPublicReport,
+  // Inspector settings
+  getInspectSettings, upsertInspectSettings,
   // Analytics
   getInspectAnalytics,
   // Floor plans
@@ -27,6 +29,8 @@ import {
   searchPortfolio, compareReports,
   // Tasks
   listTasks, createTask, updateTask, deleteTask,
+  // Scheduling
+  listSchedules, createSchedule, updateSchedule, deleteSchedule, listUpcomingSchedules,
 } from '../controllers/inspect.controller';
 
 const router = Router();
@@ -37,6 +41,10 @@ router.get('/public/:token', getPublicReport);
 
 // All other inspect routes require authentication
 router.use(authenticate);
+
+// ── Inspector Settings ────────────────────────────────────────────────────────
+router.get('/settings',   getInspectSettings);
+router.put('/settings',   upsertInspectSettings);
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 router.get('/dashboard',  getDashboardStats);
@@ -96,5 +104,12 @@ router.get('/reports/:id/tasks',    listTasks);
 router.post('/reports/:id/tasks',   createTask);
 router.put('/tasks/:tid',           updateTask);
 router.delete('/tasks/:tid',        deleteTask);
+
+// ── Schedules ─────────────────────────────────────────────────────────────────
+router.get('/schedules/upcoming',                listUpcomingSchedules);
+router.get('/projects/:projectId/schedules',     listSchedules);
+router.post('/projects/:projectId/schedules',    createSchedule);
+router.put('/schedules/:sid',                    updateSchedule);
+router.delete('/schedules/:sid',                 deleteSchedule);
 
 export default router;

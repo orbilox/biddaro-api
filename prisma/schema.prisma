@@ -86,6 +86,8 @@ model User {
   inspectTasks           InspectTask[]
   inspectReviewNotes     InspectReviewNote[]
   inspectFloorPlans      InspectFloorPlan[]
+  inspectSettings        InspectSettings?
+  inspectSchedules       InspectSchedule[]
 }
 
 model Job {
@@ -444,7 +446,7 @@ model PMDiscussionReply {
   discussion   PMDiscussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
   authorId     String
   author       User         @relation("pmReplyAuthor", fields: [authorId], references: [id], onDelete: Cascade)
-  content      String
+  content      Json
   createdAt    DateTime     @default(now())
 }
 
@@ -1145,6 +1147,7 @@ model InspectProject {
   reports     InspectReport[]
   tasks       InspectTask[]
   floorPlans  InspectFloorPlan[]
+  schedules   InspectSchedule[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -1245,6 +1248,40 @@ model InspectFloorPlan {
   pins        Json           // Pin[] = [{ id, x, y, title, severity, notes }]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
+
+  @@index([projectId])
+  @@index([userId])
+}
+
+model InspectSettings {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName   String?                        // Appears in report header
+  inspectorName String?                        // Override display name
+  licenseNo     String?                        // Professional license number
+  phone         String?                        // Contact phone for reports
+  address       String?                        // Company/office address
+  logoUrl       String?                        // Company logo URL for PDF/DOCX
+  footerNote    String?                        // Custom footer text on exports
+  updatedAt     DateTime  @updatedAt
+}
+
+model InspectSchedule {
+  id            String         @id @default(cuid())
+  projectId     String
+  project       InspectProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduledAt   DateTime                               // When the inspection is due
+  title         String                                 // e.g. "Q2 Structural Inspection"
+  notes         String?                                // Inspector notes / prep instructions
+  notifyEmail   String?                                // Send reminder to this email
+  status        String         @default("pending")     // pending|completed|cancelled
+  recurrence    String?                                // none|weekly|monthly|quarterly
+  completedAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@index([projectId])
   @@index([userId])
