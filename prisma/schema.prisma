@@ -1285,6 +1285,8 @@ model InspectSettings {
   address       String?                        // Company/office address
   logoUrl       String?                        // Company logo URL for PDF/DOCX
   footerNote    String?                        // Custom footer text on exports
+  brandColor    String?                        // Hex accent color e.g. #2563eb
+  headerBg      String?                        // Report header background hex
   updatedAt     DateTime  @updatedAt
 }
 

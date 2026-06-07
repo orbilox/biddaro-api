@@ -2889,12 +2889,12 @@ export async function getInspectSettings(req: AuthenticatedRequest, res: Respons
 export async function upsertInspectSettings(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const userId = req.user!.userId;
-    const { companyName, inspectorName, licenseNo, phone, address, logoUrl, footerNote } = req.body;
+    const { companyName, inspectorName, licenseNo, phone, address, logoUrl, footerNote, brandColor, headerBg } = req.body;
 
     const settings = await prisma.inspectSettings.upsert({
       where: { userId },
-      update: { companyName, inspectorName, licenseNo, phone, address, logoUrl, footerNote },
-      create: { userId, companyName, inspectorName, licenseNo, phone, address, logoUrl, footerNote },
+      update: { companyName, inspectorName, licenseNo, phone, address, logoUrl, footerNote, brandColor, headerBg },
+      create: { userId, companyName, inspectorName, licenseNo, phone, address, logoUrl, footerNote, brandColor, headerBg },
     });
     sendSuccess(res, settings);
   } catch (err: any) {
