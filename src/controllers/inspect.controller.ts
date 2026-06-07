@@ -516,6 +516,7 @@ export async function generateReport(req: AuthenticatedRequest, res: Response): 
     const { id: projectId } = req.params;
     const language = (req.body?.language as string) || 'en';
     const langName = SUPPORTED_LANGUAGES[language] ?? 'English';
+    const overrideTemplateId = (req.body?.templateId as string | undefined) || null;
 
     const project = await prisma.inspectProject.findFirst({
       where: { id: projectId, userId },
@@ -527,6 +528,13 @@ export async function generateReport(req: AuthenticatedRequest, res: Response): 
     if (!project) { sendNotFound(res, 'Project'); return; }
     if (project.captures.length === 0) {
       sendError(res, 'Add at least one field capture before generating a report', 400); return;
+    }
+
+    // If a template override was provided, look it up and use it instead of the project default
+    let effectiveTemplate = project.template;
+    if (overrideTemplateId) {
+      const tmpl = await prisma.inspectTemplate.findFirst({ where: { id: overrideTemplateId, userId } });
+      if (tmpl) effectiveTemplate = tmpl;
     }
 
     // Auto-caption photos that have no text content yet
@@ -559,7 +567,7 @@ export async function generateReport(req: AuthenticatedRequest, res: Response): 
     }).join('\n\n');
 
     // Get template structure
-    const templateStructure = project.template?.structure as { sections?: Array<{ id: string; title: string; description: string }> } | null;
+    const templateStructure = effectiveTemplate?.structure as { sections?: Array<{ id: string; title: string; description: string }> } | null;
     const sections = templateStructure?.sections ?? [
       { id: 'executive-summary', title: 'Executive Summary', description: 'Overview of findings' },
       { id: 'site-observations', title: 'Site Observations', description: 'Detailed on-site observations' },
