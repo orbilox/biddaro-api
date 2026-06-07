@@ -37,6 +37,8 @@ import {
   signPublicReport,
   // Bulk export
   bulkExportReports,
+  // AI trend summary
+  generateTrendSummary,
 } from '../controllers/inspect.controller';
 
 const router = Router();
@@ -55,7 +57,8 @@ router.put('/settings',   upsertInspectSettings);
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 router.get('/dashboard',  getDashboardStats);
-router.get('/analytics',  getInspectAnalytics);
+router.get('/analytics',       getInspectAnalytics);
+router.post('/analytics/trend', generateTrendSummary);
 router.post('/search',    searchPortfolio);
 router.post('/compare',   compareReports);
 

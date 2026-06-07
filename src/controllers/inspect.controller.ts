@@ -2786,6 +2786,158 @@ export async function getInspectAnalytics(req: AuthenticatedRequest, res: Respon
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// AI DEFECT TREND SUMMARY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /inspect/analytics/trend
+ * Collects portfolio analytics and asks GPT-4o-mini to produce a structured
+ * trend narrative covering:
+ *   - Overall portfolio health trajectory
+ *   - Most prevalent defect types / recurring themes
+ *   - Projects requiring attention
+ *   - Month-over-month change
+ *   - 2–3 actionable recommendations
+ *
+ * Returns { summary: string, generatedAt: string }
+ */
+export async function generateTrendSummary(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+
+    // Gather the same data as getInspectAnalytics
+    const [allReports, allTasks, allCaptures] = await Promise.all([
+      prisma.inspectReport.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true, title: true, status: true, createdAt: true, content: true,
+          project: { select: { name: true, location: true } },
+        },
+      }),
+      prisma.inspectTask.findMany({
+        where: { userId },
+        select: { id: true, status: true, severity: true, dueDate: true },
+      }),
+      prisma.inspectCapture.findMany({
+        where: { project: { userId } },
+        select: { type: true, severity: true, section: true, content: true, tags: true },
+        take: 200, // limit for prompt size
+      }),
+    ]);
+
+    if (allReports.length === 0) {
+      sendError(res, 'No reports available to analyse', 400); return;
+    }
+
+    // Aggregate stats
+    let criticalCount = 0, warningCount = 0, normalCount = 0;
+    const projectFindings: Record<string, { critical: number; warning: number }> = {};
+    for (const r of allReports) {
+      const c = r.content as ReportContent | null;
+      if (!c?.summary) continue;
+      criticalCount += c.summary.criticalCount ?? 0;
+      warningCount  += c.summary.warningCount  ?? 0;
+      normalCount   += c.summary.normalCount   ?? 0;
+      const name = r.project.name;
+      if (!projectFindings[name]) projectFindings[name] = { critical: 0, warning: 0 };
+      projectFindings[name].critical += c.summary.criticalCount ?? 0;
+      projectFindings[name].warning  += c.summary.warningCount  ?? 0;
+    }
+
+    const statusCounts: Record<string, number> = {};
+    for (const r of allReports) statusCounts[r.status] = (statusCounts[r.status] ?? 0) + 1;
+
+    const now = new Date();
+    let overdueTasks = 0;
+    for (const t of allTasks) {
+      if (t.dueDate && new Date(t.dueDate) < now && t.status !== 'done') overdueTasks++;
+    }
+
+    const topProblematic = Object.entries(projectFindings)
+      .sort((a, b) => (b[1].critical + b[1].warning) - (a[1].critical + a[1].warning))
+      .slice(0, 5)
+      .map(([name, s]) => `${name}: ${s.critical} critical, ${s.warning} warnings`);
+
+    // Monthly trend (last 3 months)
+    const monthTrend: Record<string, { reports: number; critical: number }> = {};
+    for (let i = 2; i >= 0; i--) {
+      const d = new Date(); d.setMonth(d.getMonth() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      monthTrend[key] = { reports: 0, critical: 0 };
+    }
+    for (const r of allReports) {
+      const d = new Date(r.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!monthTrend[key]) continue;
+      monthTrend[key].reports++;
+      const c = r.content as ReportContent | null;
+      if (c?.summary) monthTrend[key].critical += c.summary.criticalCount ?? 0;
+    }
+
+    // Collect common tags and section names to understand defect categories
+    const tagFreq: Record<string, number> = {};
+    const sectionFreq: Record<string, number> = {};
+    for (const c of allCaptures) {
+      for (const t of (c.tags ?? [])) tagFreq[t] = (tagFreq[t] ?? 0) + 1;
+      if (c.section) sectionFreq[c.section] = (sectionFreq[c.section] ?? 0) + 1;
+    }
+    const topTags     = Object.entries(tagFreq).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([t, n]) => `${t}(${n})`);
+    const topSections = Object.entries(sectionFreq).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([s, n]) => `${s}(${n})`);
+
+    const totalFindings = criticalCount + warningCount + normalCount;
+    const healthScore   = totalFindings > 0
+      ? Math.max(0, Math.min(100, Math.round(100 - ((criticalCount * 10 + warningCount * 3) / totalFindings) * 10)))
+      : 100;
+
+    const prompt = `You are an expert construction inspector and portfolio analyst. Based on the following metrics from an inspection management platform, write a concise but insightful trend summary report for the inspector.
+
+=== PORTFOLIO METRICS ===
+Total reports: ${allReports.length}
+Reports by status: ${JSON.stringify(statusCounts)}
+Total findings: ${totalFindings} (critical: ${criticalCount}, warnings: ${warningCount}, normal: ${normalCount})
+Portfolio health score: ${healthScore}/100
+Total tasks: ${allTasks.length}, overdue: ${overdueTasks}
+Total field captures: ${allCaptures.length}
+
+=== MONTHLY TREND (last 3 months) ===
+${Object.entries(monthTrend).map(([m, v]) => `${m}: ${v.reports} reports, ${v.critical} critical findings`).join('\n')}
+
+=== TOP PROJECTS BY SEVERITY ===
+${topProblematic.join('\n') || 'N/A'}
+
+=== MOST TAGGED TRADE AREAS ===
+${topTags.join(', ') || 'No tags yet'}
+
+=== TOP AFFECTED SECTIONS ===
+${topSections.join(', ') || 'No section data'}
+
+=== INSTRUCTIONS ===
+Write a 4-6 paragraph professional trend summary. Use clear headings (prefix each with ##). Cover:
+1. ## Portfolio Overview — overall health, volume, trajectory
+2. ## Key Defect Trends — most common issues, trades, recurring themes
+3. ## Projects Requiring Attention — top problematic projects
+4. ## Month-on-Month Trend — improving, stable, or worsening
+5. ## Recommendations — 2-3 specific, actionable steps for the inspector
+
+Keep it concise but data-driven. Speak directly to the inspector (use "your portfolio", "you should"). Do not use bullet points for main paragraphs — use flowing prose. End with a brief encouragement or motivational sentence.`;
+
+    const aiResponse = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 800,
+      temperature: 0.7,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const summary = aiResponse.choices[0]?.message?.content?.trim() ?? 'Summary unavailable.';
+
+    sendSuccess(res, { summary, generatedAt: new Date().toISOString() });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // INSPECTION SCHEDULING
 // ═══════════════════════════════════════════════════════════════════════════════
 
