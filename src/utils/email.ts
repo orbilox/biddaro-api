@@ -541,3 +541,69 @@ export async function sendLoanStatusEmail(opts: {
     }),
   });
 }
+
+/** 10. Inspect — share link sent to client when inspector enables public link */
+export async function sendInspectShareLinkEmail(opts: {
+  clientEmail: string;
+  clientName: string;
+  inspectorName: string;
+  reportTitle: string;
+  projectName: string;
+  projectLocation?: string;
+  publicPortalUrl: string;
+}): Promise<void> {
+  const { clientEmail, clientName, inspectorName, reportTitle, projectName, projectLocation, publicPortalUrl } = opts;
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: clientEmail, name: clientName }],
+    subject: `Inspection Report Shared — ${projectName}`,
+    htmlContent: brandedHtml({
+      preheader: `${inspectorName} has shared an inspection report for ${projectName} with you.`,
+      bodyTitle: '📋 Inspection Report Shared With You',
+      bodyLines: [
+        `Dear ${clientName},`,
+        `<strong>${inspectorName}</strong> has shared an inspection report with you for <strong>${projectName}</strong>${projectLocation ? ` (${projectLocation})` : ''}.`,
+        `Report: <strong>${reportTitle}</strong>`,
+        `You can view the full report, all findings, and section details using the link below. No account or login is required.`,
+        `If you have any questions about the findings, please contact your inspector directly.`,
+      ],
+      ctaLink: publicPortalUrl,
+      ctaLabel: 'View Inspection Report →',
+      footerNote: `This inspection report was prepared by ${inspectorName} using Biddaro Inspect.`,
+    }),
+  });
+}
+
+/** 11. Inspect — inspector notified when client signs the report */
+export async function sendInspectSignatureNotificationEmail(opts: {
+  inspectorEmail: string;
+  inspectorName: string;
+  clientSignedByName: string;
+  reportTitle: string;
+  projectName: string;
+  signedAt: Date;
+  reportUrl: string;
+}): Promise<void> {
+  const { inspectorEmail, inspectorName, clientSignedByName, reportTitle, projectName, signedAt, reportUrl } = opts;
+  const dateStr = signedAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  const timeStr = signedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: inspectorEmail, name: inspectorName }],
+    subject: `✅ Client Signed Inspection Report — ${projectName}`,
+    htmlContent: brandedHtml({
+      preheader: `${clientSignedByName} has digitally acknowledged the inspection report for ${projectName}.`,
+      bodyTitle: '✅ Client Report Signature Received',
+      bodyLines: [
+        `Hi ${inspectorName},`,
+        `Your client <strong>${clientSignedByName}</strong> has digitally acknowledged the inspection report for <strong>${projectName}</strong>.`,
+        `<strong>Report:</strong> ${reportTitle}<br/><strong>Signed on:</strong> ${dateStr} at ${timeStr}`,
+        `The signed acknowledgement will be included in all future PDF and DOCX exports of this report.`,
+        `You can view the report and the client signature status in your Biddaro Inspect dashboard.`,
+      ],
+      ctaLink: reportUrl,
+      ctaLabel: 'View Report in Dashboard →',
+      footerNote: 'This notification was sent by Biddaro Inspect. The digital signature is stored securely.',
+    }),
+  });
+}

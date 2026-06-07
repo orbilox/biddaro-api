@@ -28,7 +28,11 @@ import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
-import { sendInspectionReportEmail } from '../utils/email';
+import {
+  sendInspectionReportEmail,
+  sendInspectShareLinkEmail,
+  sendInspectSignatureNotificationEmail,
+} from '../utils/email';
 import { getPagination } from '../utils/pagination';
 import type { AuthenticatedRequest } from '../types';
 
@@ -876,7 +880,15 @@ export async function shareReport(req: AuthenticatedRequest, res: Response): Pro
   try {
     const userId = req.user!.userId;
     const { id } = req.params;
-    const report = await getOwnedReport(id, userId);
+
+    // Load full report + project for email notification
+    const report = await prisma.inspectReport.findFirst({
+      where: { id, userId },
+      include: {
+        project: { select: { name: true, location: true, clientName: true, clientEmail: true } },
+        user:    { select: { firstName: true, lastName: true, email: true } },
+      },
+    });
     if (!report) { sendNotFound(res, 'Report'); return; }
 
     // Generate a stable public token if not already set
@@ -887,6 +899,25 @@ export async function shareReport(req: AuthenticatedRequest, res: Response): Pro
       select: { id: true, publicToken: true, publicEnabled: true },
     });
     sendSuccess(res, updated);
+
+    // Fire-and-forget: email client the share link if clientEmail is set
+    // Only send if this is the first time sharing (token was just generated)
+    if (!report.publicToken && report.project.clientEmail) {
+      const frontendUrl = process.env.FRONTEND_URL || 'https://biddaro.com';
+      const publicPortalUrl = `${frontendUrl}/inspect-share/${publicToken}`;
+      const inspectorName = report.user
+        ? `${report.user.firstName} ${report.user.lastName}`.trim()
+        : 'Your Inspector';
+      sendInspectShareLinkEmail({
+        clientEmail:    report.project.clientEmail,
+        clientName:     report.project.clientName ?? 'Client',
+        inspectorName,
+        reportTitle:    report.title,
+        projectName:    report.project.name,
+        projectLocation: report.project.location ?? undefined,
+        publicPortalUrl,
+      }).catch(err => console.error('[shareReport] email error:', err.message));
+    }
   } catch (err: any) {
     sendError(res, err.message);
   }
@@ -946,16 +977,20 @@ export async function signPublicReport(req: Request, res: Response): Promise<voi
 
     const report = await prisma.inspectReport.findFirst({
       where: { publicToken: token, publicEnabled: true },
+      include: {
+        user: { select: { firstName: true, lastName: true, email: true } },
+      },
     });
     if (!report) { sendNotFound(res, 'Report'); return; }
     if (report.clientSignedAt) { sendError(res, 'Report has already been signed', 409); return; }
 
+    const now = new Date();
     const updated = await prisma.inspectReport.update({
       where: { id: report.id },
       data: {
         clientSignature:    signatureData,
         clientSignedByName: signerName.trim(),
-        clientSignedAt:     new Date(),
+        clientSignedAt:     now,
         status:             report.status === 'draft' ? 'approved' : report.status,
       },
     });
@@ -965,6 +1000,29 @@ export async function signPublicReport(req: Request, res: Response): Promise<voi
       signedAt: updated.clientSignedAt,
       signerName: updated.clientSignedByName,
     });
+
+    // Fire-and-forget: notify inspector that client signed
+    if (report.user?.email) {
+      const frontendUrl = process.env.FRONTEND_URL || 'https://biddaro.com';
+      const reportUrl = `${frontendUrl}/dashboard/inspect/reports/${report.id}`;
+      const inspectorName = `${report.user.firstName} ${report.user.lastName}`.trim();
+
+      // Load project name for the email
+      prisma.inspectReport.findUnique({
+        where: { id: report.id },
+        select: { project: { select: { name: true } } },
+      }).then(full => {
+        sendInspectSignatureNotificationEmail({
+          inspectorEmail:     report.user!.email,
+          inspectorName,
+          clientSignedByName: signerName.trim(),
+          reportTitle:        report.title,
+          projectName:        full?.project?.name ?? 'your project',
+          signedAt:           now,
+          reportUrl,
+        }).catch(err => console.error('[signPublicReport] notify email error:', err.message));
+      }).catch(() => { /* non-critical */ });
+    }
   } catch (err: any) {
     sendError(res, err.message);
   }
