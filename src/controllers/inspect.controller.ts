@@ -2152,6 +2152,36 @@ function buildPdf(
       y += 56;
     }
 
+    // ── Cover hero photo ───────────────────────────────────────────────────
+    // Use the first embedded photo as a visual banner on the cover
+    if (photos && photos.length > 0) {
+      const hero = photos[0];
+      const HERO_H = 160;
+      if (y + HERO_H + 20 <= 750) {
+        try {
+          doc.save();
+          // Clip to rounded-rect banner
+          doc.roundedRect(LEFT, y, WIDTH, HERO_H, 6).clip();
+          doc.image(hero.buffer, LEFT, y, { width: WIDTH, height: HERO_H, cover: [WIDTH, HERO_H] });
+          doc.restore();
+          // Gradient overlay for caption readability
+          if (hero.caption || hero.section) {
+            doc.save();
+            doc.rect(LEFT, y + HERO_H - 36, WIDTH, 36)
+              .fillOpacity(0.55).fill('#000000');
+            doc.fillOpacity(1);
+            const captionText = hero.caption ?? hero.section ?? '';
+            doc.font('Helvetica').fontSize(8).fillColor('#FFFFFF')
+              .text(captionText, LEFT + 8, y + HERO_H - 24, { width: WIDTH - 16, lineBreak: false, ellipsis: true });
+            doc.restore();
+          }
+          y += HERO_H + 14;
+        } catch {
+          // skip hero if image fails
+        }
+      }
+    }
+
     // ── Sections ───────────────────────────────────────────────────────────
     for (const section of sections) {
       const fg = sevFg(section.severity);
