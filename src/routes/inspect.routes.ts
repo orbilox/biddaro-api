@@ -13,6 +13,8 @@ import {
   generateReport, listReports, getReport, updateReport, deleteReport, sendReport, exportReportDocx, exportReportPdf,
   // Analytics
   getInspectAnalytics,
+  // Review notes
+  listReviewNotes, addReviewNote, deleteReviewNote,
   // Captioning
   captionCapture,
   // Portfolio search
@@ -61,6 +63,11 @@ router.delete('/reports/:id',                 deleteReport);
 router.post('/reports/:id/send',              sendReport);
 router.get('/reports/:id/export/docx',        exportReportDocx);
 router.get('/reports/:id/export/pdf',         exportReportPdf);
+
+// ── Review notes (audit trail) ────────────────────────────────────────────────
+router.get('/reports/:id/review/notes',    listReviewNotes);
+router.post('/reports/:id/review/notes',   addReviewNote);
+router.delete('/review/notes/:nid',        deleteReviewNote);
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 router.get('/reports/:id/tasks',    listTasks);

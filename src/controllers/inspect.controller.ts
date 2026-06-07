@@ -1520,6 +1520,99 @@ export async function getDashboardStats(req: AuthenticatedRequest, res: Response
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// REVIEW NOTES (audit trail)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function listReviewNotes(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id: reportId } = req.params;
+    const report = await getOwnedReport(reportId, userId);
+    if (!report) { sendNotFound(res, 'Report'); return; }
+    const notes = await prisma.inspectReviewNote.findMany({
+      where: { reportId },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        user: { select: { firstName: true, lastName: true, profileImage: true } },
+      },
+    });
+    sendSuccess(res, notes);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function addReviewNote(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id: reportId } = req.params;
+
+    const report = await prisma.inspectReport.findFirst({
+      where: { id: reportId, userId },
+      include: { project: { select: { name: true } } },
+    });
+    if (!report) { sendNotFound(res, 'Report'); return; }
+
+    const { type = 'comment', content, toStatus } = req.body;
+    if (!content?.trim()) { sendError(res, 'content is required', 400); return; }
+
+    // If this is a status transition, validate and apply it
+    const STATUS_TRANSITIONS: Record<string, string[]> = {
+      draft:    ['review'],
+      review:   ['approved', 'draft'],
+      approved: ['sent', 'review'],
+      sent:     [],
+    };
+
+    let fromStatus: string | undefined;
+    if (type === 'status_change' && toStatus) {
+      const allowed = STATUS_TRANSITIONS[report.status] ?? [];
+      if (!allowed.includes(toStatus)) {
+        sendError(res, `Cannot transition from '${report.status}' to '${toStatus}'`, 400); return;
+      }
+      fromStatus = report.status;
+      await prisma.inspectReport.update({ where: { id: reportId }, data: { status: toStatus } });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true },
+    });
+    const authorName = user ? `${user.firstName} ${user.lastName}` : 'Unknown';
+
+    const note = await prisma.inspectReviewNote.create({
+      data: {
+        reportId, userId,
+        type,
+        content: content.trim(),
+        fromStatus,
+        toStatus: type === 'status_change' ? toStatus : undefined,
+        authorName,
+      },
+      include: {
+        user: { select: { firstName: true, lastName: true, profileImage: true } },
+      },
+    });
+    sendCreated(res, note);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function deleteReviewNote(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { nid } = req.params;
+    const note = await prisma.inspectReviewNote.findFirst({ where: { id: nid, userId } });
+    if (!note) { sendNotFound(res, 'Review note'); return; }
+    await prisma.inspectReviewNote.delete({ where: { id: nid } });
+    sendSuccess(res, { deleted: true });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ANALYTICS
 // ═══════════════════════════════════════════════════════════════════════════════
 
