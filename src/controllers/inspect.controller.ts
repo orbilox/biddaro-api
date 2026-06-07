@@ -364,6 +364,20 @@ export async function addCapture(req: AuthenticatedRequest, res: Response): Prom
   }
 }
 
+export async function getCapture(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id: projectId, cid } = req.params;
+    const project = await getOwnedProject(projectId, userId);
+    if (!project) { sendNotFound(res, 'Project'); return; }
+    const capture = await prisma.inspectCapture.findFirst({ where: { id: cid, projectId } });
+    if (!capture) { sendNotFound(res, 'Capture'); return; }
+    sendSuccess(res, capture);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
 export async function updateCapture(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const userId = req.user!.userId;

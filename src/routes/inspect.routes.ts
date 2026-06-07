@@ -9,7 +9,7 @@ import {
   // Projects
   listProjects, createProject, getProject, updateProject, deleteProject,
   // Captures
-  listCaptures, addCapture, updateCapture, deleteCapture,
+  listCaptures, addCapture, getCapture, updateCapture, deleteCapture,
   // Reports
   generateReport, listReports, listAllReports, getReport, updateReport, deleteReport, sendReport,
   exportReportDocx, exportReportPdf, importReport, listLanguages,
@@ -69,6 +69,7 @@ router.delete('/projects/:id',  deleteProject);
 // ── Captures (field observations per project) ─────────────────────────────────
 router.get('/projects/:id/captures',          listCaptures);
 router.post('/projects/:id/captures',         addCapture);
+router.get('/projects/:id/captures/:cid',           getCapture);
 router.put('/projects/:id/captures/:cid',           updateCapture);
 router.delete('/projects/:id/captures/:cid',        deleteCapture);
 router.post('/projects/:id/captures/:cid/caption',  captionCapture);
