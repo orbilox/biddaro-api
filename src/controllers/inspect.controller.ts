@@ -1029,6 +1029,125 @@ ${reportContext}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// INSPECTION COMPARISON — Delta analysis between two reports
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface ComparisonFinding {
+  area: string;         // section/area where the change is
+  description: string;  // what changed
+  previousStatus?: string;
+  currentStatus?: string;
+}
+
+interface ComparisonResult {
+  overallProgress: string;          // e.g. "75% rectification achieved"
+  progressScore: number;            // 0-100
+  resolvedIssues: ComparisonFinding[];
+  newIssues: ComparisonFinding[];
+  outstandingIssues: ComparisonFinding[];
+  summary: string;                  // narrative paragraph
+}
+
+export async function compareReports(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { reportIdA, reportIdB } = req.body;
+
+    if (!reportIdA || !reportIdB) {
+      sendError(res, 'reportIdA and reportIdB are required', 400);
+      return;
+    }
+    if (reportIdA === reportIdB) {
+      sendError(res, 'Cannot compare a report with itself', 400);
+      return;
+    }
+
+    // Load both reports (must belong to user)
+    const [reportA, reportB] = await Promise.all([
+      prisma.inspectReport.findFirst({
+        where: { id: reportIdA, userId },
+        select: { id: true, title: true, createdAt: true, content: true, project: { select: { name: true } } },
+      }),
+      prisma.inspectReport.findFirst({
+        where: { id: reportIdB, userId },
+        select: { id: true, title: true, createdAt: true, content: true, project: { select: { name: true } } },
+      }),
+    ]);
+
+    if (!reportA) { sendNotFound(res, 'Report A'); return; }
+    if (!reportB) { sendNotFound(res, 'Report B'); return; }
+
+    // Serialize reports for AI
+    function serializeReport(r: typeof reportA) {
+      const content = r!.content as {
+        sections?: Array<{ title: string; content: string; findings?: string[]; severity?: string }>;
+        summary?: { totalFindings: number; criticalCount: number; warningCount: number };
+      };
+      const sections = content?.sections ?? [];
+      return sections.map(s =>
+        `SECTION: ${s.title} [${s.severity?.toUpperCase() ?? 'NORMAL'}]\n${s.content}\n` +
+        (s.findings?.length ? `Findings:\n${s.findings.map(f => `- ${f}`).join('\n')}` : '')
+      ).join('\n\n');
+    }
+
+    const systemPrompt = `You are a construction inspection analyst. Your task is to compare two inspection reports of the same or related site and produce a structured delta analysis.
+
+REPORT A (Earlier / Baseline): "${reportA.title}" — ${new Date(reportA.createdAt).toLocaleDateString()}
+PROJECT A: ${reportA.project.name}
+
+REPORT B (Later / Current): "${reportB.title}" — ${new Date(reportB.createdAt).toLocaleDateString()}
+PROJECT B: ${reportB.project.name}
+
+INSTRUCTIONS:
+1. Compare the two reports section by section and finding by finding
+2. Identify issues that were present in Report A but are RESOLVED in Report B
+3. Identify NEW issues that appeared in Report B but not in Report A
+4. Identify issues that are STILL OUTSTANDING in both reports
+5. Calculate an overall rectification progress score (0-100)
+6. Write a professional summary paragraph
+
+Return a JSON object with this EXACT structure:
+{
+  "overallProgress": "X% rectification achieved",
+  "progressScore": 75,
+  "summary": "Professional narrative summary of the comparison in 3-4 sentences.",
+  "resolvedIssues": [
+    { "area": "Section/area name", "description": "What was resolved", "previousStatus": "Was critical defect", "currentStatus": "Now rectified" }
+  ],
+  "newIssues": [
+    { "area": "Section/area name", "description": "New issue found in current inspection" }
+  ],
+  "outstandingIssues": [
+    { "area": "Section/area name", "description": "Still unresolved from baseline", "previousStatus": "Status in first report" }
+  ]
+}`;
+
+    const userPrompt = `REPORT A (BASELINE):\n${serializeReport(reportA)}\n\n---\n\nREPORT B (CURRENT):\n${serializeReport(reportB)}`;
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    });
+
+    const raw = completion.choices[0]?.message?.content ?? '{}';
+    const result = JSON.parse(raw) as ComparisonResult;
+
+    sendSuccess(res, {
+      reportA: { id: reportA.id, title: reportA.title, projectName: reportA.project.name, createdAt: reportA.createdAt },
+      reportB: { id: reportB.id, title: reportB.title, projectName: reportB.project.name, createdAt: reportB.createdAt },
+      comparison: result,
+    });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // REPORT EXPORT — WORD (.docx)
 // ═══════════════════════════════════════════════════════════════════════════════
 

@@ -23,8 +23,8 @@ import {
   listReviewNotes, addReviewNote, deleteReviewNote,
   // Captioning
   captionCapture,
-  // Portfolio search
-  searchPortfolio,
+  // Portfolio search + comparison
+  searchPortfolio, compareReports,
   // Tasks
   listTasks, createTask, updateTask, deleteTask,
 } from '../controllers/inspect.controller';
@@ -42,6 +42,7 @@ router.use(authenticate);
 router.get('/dashboard',  getDashboardStats);
 router.get('/analytics',  getInspectAnalytics);
 router.post('/search',    searchPortfolio);
+router.post('/compare',   compareReports);
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 router.get('/templates',        listTemplates);
