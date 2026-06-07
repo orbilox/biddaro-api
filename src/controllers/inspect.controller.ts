@@ -22,7 +22,7 @@ import OpenAI from 'openai';
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
   BorderStyle, Table, TableRow, TableCell, WidthType, ShadingType,
-  Footer, PageNumber, Header, LevelFormat,
+  Footer, PageNumber, Header, LevelFormat, ImageRun,
 } from 'docx';
 import PDFDocument from 'pdfkit';
 import { PDFParse } from 'pdf-parse';
@@ -1454,6 +1454,7 @@ function buildDocx(
   content: ReportContent,
   project: { name: string; location: string | null; clientName: string | null },
   settings?: InspectorSettings | null,
+  logoBuffer?: Buffer | null,
 ): Promise<Buffer> {
   const { sections, summary } = content;
   const BRAND   = '1E3A5F';   // dark navy
@@ -1486,6 +1487,24 @@ function buildDocx(
   const children: Paragraph[] = [];
 
   // ── Cover block ─────────────────────────────────────────────────────────────
+  // Company logo (if available)
+  if (logoBuffer && logoBuffer.length > 0) {
+    const imgType: 'png' | 'jpg' = logoBuffer[0] === 0x89 ? 'png' : 'jpg';
+    children.push(
+      new Paragraph({
+        spacing: { before: 0, after: 160 },
+        children: [
+          new ImageRun({
+            type: imgType,
+            data: logoBuffer,
+            transformation: { width: 140, height: 46 },
+            altText: { title: 'Company Logo', description: 'Company Logo', name: 'logo' },
+          }),
+        ],
+      }),
+    );
+  }
+
   children.push(
     new Paragraph({
       spacing: { before: 0, after: 120 },
@@ -1931,7 +1950,8 @@ export async function exportReportDocx(req: AuthenticatedRequest, res: Response)
     if (!report) { sendNotFound(res, 'Report'); return; }
 
     const content = report.content as ReportContent;
-    const buffer = await buildDocx(report, content, report.project, settings);
+    const logoBuffer = await fetchLogoBuffer(settings?.logoUrl);
+    const buffer = await buildDocx(report, content, report.project, settings, logoBuffer);
 
     const filename = `${report.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.docx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
