@@ -2058,6 +2058,20 @@ function buildPdf(
           .text('Biddaro Inspect — Confidential', LEFT, 796, { width: WIDTH / 2 })
           .text(`Page ${pageNum} of ${range.count}`, LEFT + WIDTH / 2, 796, { width: WIDTH / 2, align: 'right' })
           .restore();
+
+        // Watermark — diagonal DRAFT stamp on draft reports
+        if (report.status === 'draft') {
+          const CX = 595 / 2;  // page center x
+          const CY = 842 / 2;  // page center y
+          doc.save();
+          doc.translate(CX, CY);
+          doc.rotate(-45);
+          doc.font('Helvetica-Bold').fontSize(90)
+            .fillOpacity(0.06).fillColor('#1E3A5F')
+            .text('DRAFT', 0, 0, { align: 'center', lineBreak: false });
+          doc.restore();
+          doc.fillOpacity(1); // reset opacity
+        }
       }
     }
 
