@@ -1061,6 +1061,37 @@ export async function listTasks(req: AuthenticatedRequest, res: Response): Promi
   }
 }
 
+/** Cross-report task list for the current user — used by the tasks management page. */
+export async function listAllTasks(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const status  = req.query.status  as string | undefined;  // open|in_progress|done
+    const severity = req.query.severity as string | undefined;
+    const projectId = req.query.projectId as string | undefined;
+
+    const tasks = await prisma.inspectTask.findMany({
+      where: {
+        userId,
+        ...(status    ? { status }    : {}),
+        ...(severity  ? { severity }  : {}),
+        ...(projectId ? { projectId } : {}),
+      },
+      include: {
+        report:  { select: { id: true, title: true } },
+        project: { select: { id: true, name: true } },
+      },
+      orderBy: [
+        { dueDate: 'asc' },
+        { createdAt: 'asc' },
+      ],
+      take: 200,
+    });
+    sendSuccess(res, tasks);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
 export async function createTask(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const userId = req.user!.userId;

@@ -28,7 +28,7 @@ import {
   // Portfolio search + comparison
   searchPortfolio, compareReports,
   // Tasks
-  listTasks, createTask, updateTask, deleteTask,
+  listTasks, listAllTasks, createTask, updateTask, deleteTask,
   // Scheduling
   listSchedules, createSchedule, updateSchedule, deleteSchedule, listUpcomingSchedules,
   // Versioning
@@ -114,6 +114,7 @@ router.post('/reports/:id/review/notes',   addReviewNote);
 router.delete('/review/notes/:nid',        deleteReviewNote);
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
+router.get('/tasks',                listAllTasks);
 router.get('/reports/:id/tasks',    listTasks);
 router.post('/reports/:id/tasks',   createTask);
 router.put('/tasks/:tid',           updateTask);
