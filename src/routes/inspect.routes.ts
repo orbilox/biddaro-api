@@ -12,7 +12,7 @@ import {
   listCaptures, addCapture, getCapture, updateCapture, deleteCapture,
   // Reports
   generateReport, listReports, listAllReports, getReport, updateReport, deleteReport, sendReport,
-  exportReportDocx, exportReportPdf, importReport, listLanguages,
+  exportReportDocx, exportReportPdf, exportCertificate, importReport, listLanguages,
   // Client portal (public share)
   shareReport, unshareReport, getPublicReport,
   // Inspector settings
@@ -93,6 +93,7 @@ router.post('/reports/:id/share',             shareReport);    // enable public 
 router.delete('/reports/:id/share',           unshareReport);  // disable public link
 router.get('/reports/:id/export/docx',        exportReportDocx);
 router.get('/reports/:id/export/pdf',         exportReportPdf);
+router.get('/reports/:id/export/certificate', exportCertificate);
 
 // ── Floor plans ───────────────────────────────────────────────────────────────
 router.get('/projects/:id/floor-plans',        listFloorPlans);

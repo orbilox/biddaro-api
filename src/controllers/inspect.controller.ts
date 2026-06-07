@@ -2897,3 +2897,166 @@ export async function listUpcomingSchedules(req: AuthenticatedRequest, res: Resp
     sendError(res, err.message);
   }
 }
+
+// ─── Inspection Completion Certificate ───────────────────────────────────────
+
+/**
+ * Generates a single-page A4-landscape styled PDF "Certificate of Inspection Completion"
+ * for an approved or sent report. Suitable for printing and framing.
+ */
+export async function exportCertificate(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+
+    const [report, settings] = await Promise.all([
+      prisma.inspectReport.findFirst({
+        where: { id, userId },
+        include: {
+          project: { select: { name: true, location: true, clientName: true } },
+          user: { select: { firstName: true, lastName: true } },
+        },
+      }),
+      prisma.inspectSettings.findUnique({ where: { userId } }),
+    ]);
+    if (!report) { sendNotFound(res, 'Report'); return; }
+
+    const content = report.content as ReportContent;
+    const summary = content?.summary;
+
+    const BRAND  = '#1E3A5F';
+    const ACCENT = '#2E86C1';
+    const GOLD   = '#B7860B';
+    const LIGHT  = '#F4F8FC';
+
+    const inspectorName = settings?.inspectorName
+      || (report.user ? `${report.user.firstName} ${report.user.lastName}`.trim() : 'Inspector')
+      || 'Inspector';
+    const companyName = settings?.companyName || 'Biddaro Inspect';
+    const certDate = (report.sentAt || report.updatedAt || report.createdAt)
+      .toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+    const issueDate = new Date().toLocaleDateString('en-IN', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+    const certNo = `CERT-${report.id.slice(-8).toUpperCase()}`;
+    const overallStatus = summary?.overallStatus ?? 'reviewed';
+    const statusLabel = overallStatus === 'pass' ? 'PASSED INSPECTION'
+                      : overallStatus === 'fail' ? 'INSPECTION COMPLETE — ISSUES NOTED'
+                      : 'INSPECTION COMPLETE';
+
+    const buffer = await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Uint8Array[] = [];
+      const doc = new PDFDocument({
+        size: 'A4', layout: 'landscape',
+        margins: { top: 40, bottom: 40, left: 60, right: 60 },
+        bufferPages: true,
+        info: { Title: `Certificate of Inspection — ${report.title}` },
+      });
+      doc.on('data', (d: Uint8Array) => chunks.push(d));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const W = doc.page.width;
+      const H = doc.page.height;
+      const CX = W / 2;
+
+      // Border decoration
+      doc.rect(20, 20, W - 40, H - 40).strokeColor(BRAND).lineWidth(3).stroke();
+      doc.rect(28, 28, W - 56, H - 56).strokeColor(GOLD).lineWidth(1).stroke();
+      function corner(x: number, y: number, sx: number, sy: number) {
+        doc.moveTo(x, y).lineTo(x + sx * 30, y).strokeColor(GOLD).lineWidth(2).stroke();
+        doc.moveTo(x, y).lineTo(x, y + sy * 30).strokeColor(GOLD).lineWidth(2).stroke();
+      }
+      corner(28, 28, 1, 1); corner(W - 28, 28, -1, 1);
+      corner(28, H - 28, 1, -1); corner(W - 28, H - 28, -1, -1);
+
+      // Header banner
+      doc.rect(28, 28, W - 56, 70).fillColor(BRAND).fill();
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#FFFFFF')
+        .text('BIDDARO INSPECT', CX - 250, 43, { width: 500, align: 'center' });
+      doc.font('Helvetica').fontSize(8).fillColor('#AACCEE')
+        .text('AI-POWERED CONSTRUCTION INSPECTION', CX - 250, 60, { width: 500, align: 'center' });
+
+      // Title
+      doc.font('Helvetica-Bold').fontSize(26).fillColor(BRAND)
+        .text('Certificate of Inspection', CX - 300, 118, { width: 600, align: 'center' });
+      doc.font('Helvetica').fontSize(13).fillColor(GOLD)
+        .text('COMPLETION & REVIEW', CX - 300, 150, { width: 600, align: 'center' });
+      doc.moveTo(60, 175).lineTo(W - 60, 175).strokeColor(GOLD).lineWidth(0.75).stroke();
+
+      // Body
+      doc.font('Helvetica').fontSize(10).fillColor('#555555')
+        .text('This is to certify that a professional inspection has been completed for', CX - 300, 190, { width: 600, align: 'center' });
+      doc.font('Helvetica-Bold').fontSize(16).fillColor(BRAND)
+        .text(report.project.name, CX - 340, 208, { width: 680, align: 'center' });
+      if (report.project.location) {
+        doc.font('Helvetica').fontSize(10).fillColor('#666666')
+          .text(report.project.location, CX - 300, 232, { width: 600, align: 'center' });
+      }
+      doc.font('Helvetica').fontSize(9.5).fillColor('#666666')
+        .text(`Report: ${report.title}`, CX - 280, 250, { width: 560, align: 'center' });
+
+      // Status badge
+      const statusColor = overallStatus === 'pass' ? '#1A7A4A' : overallStatus === 'fail' ? '#B32424' : BRAND;
+      const statusBg    = overallStatus === 'pass' ? '#E8F5ED' : overallStatus === 'fail' ? '#FDECEA' : LIGHT;
+      const bW = 260; const bX = CX - bW / 2;
+      doc.rect(bX, 270, bW, 28).fillColor(statusBg).fill();
+      doc.rect(bX, 270, bW, 28).strokeColor(statusColor).lineWidth(1).stroke();
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(statusColor)
+        .text(statusLabel, bX, 281, { width: bW, align: 'center' });
+
+      // Stats
+      if (summary) {
+        const stats = [
+          { label: 'Total Findings', value: String(summary.totalFindings) },
+          { label: 'Critical Issues', value: String(summary.criticalCount) },
+          { label: 'Warnings',        value: String(summary.warningCount) },
+        ];
+        const slotW = 140; const totalW = stats.length * slotW + (stats.length - 1) * 20;
+        let sx = CX - totalW / 2;
+        for (const stat of stats) {
+          doc.rect(sx, 310, slotW, 38).fillColor(LIGHT).fill();
+          doc.font('Helvetica-Bold').fontSize(18).fillColor(BRAND).text(stat.value, sx, 316, { width: slotW, align: 'center' });
+          doc.font('Helvetica').fontSize(8).fillColor('#888888').text(stat.label, sx, 333, { width: slotW, align: 'center' });
+          sx += slotW + 20;
+        }
+      }
+      doc.font('Helvetica').fontSize(9).fillColor('#666666')
+        .text(`Client: ${report.project.clientName ?? 'N/A'}   ·   Inspection Date: ${certDate}   ·   Certificate No: ${certNo}`,
+          CX - 300, 362, { width: 600, align: 'center' });
+
+      // Signatures
+      const sigY = 390;
+      doc.moveTo(80, sigY).lineTo(300, sigY).strokeColor('#444444').lineWidth(0.5).stroke();
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(BRAND).text(inspectorName, 80, sigY + 5, { width: 220, align: 'center' });
+      doc.font('Helvetica').fontSize(8).fillColor('#888888').text('Authorised Inspector', 80, sigY + 17, { width: 220, align: 'center' });
+      if (settings?.licenseNo) {
+        doc.font('Helvetica').fontSize(7.5).fillColor('#888888').text(`Lic. No: ${settings.licenseNo}`, 80, sigY + 29, { width: 220, align: 'center' });
+      }
+      if (report.clientSignedByName && report.clientSignedAt) {
+        doc.moveTo(W - 300, sigY).lineTo(W - 80, sigY).strokeColor('#444444').lineWidth(0.5).stroke();
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(BRAND).text(report.clientSignedByName, W - 300, sigY + 5, { width: 220, align: 'center' });
+        doc.font('Helvetica').fontSize(8).fillColor('#888888').text('Client Acknowledgement', W - 300, sigY + 17, { width: 220, align: 'center' });
+        const csd = report.clientSignedAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+        doc.font('Helvetica').fontSize(7.5).fillColor('#888888').text(`Signed: ${csd}`, W - 300, sigY + 29, { width: 220, align: 'center' });
+      }
+      doc.font('Helvetica').fontSize(8).fillColor(ACCENT).text(companyName, CX - 200, sigY + 5, { width: 400, align: 'center' });
+
+      // Footer
+      doc.font('Helvetica').fontSize(7.5).fillColor('#AAAAAA')
+        .text(`Issued: ${issueDate}   ·   ${certNo}   ·   Powered by Biddaro Inspect AI`, CX - 300, H - 52, { width: 600, align: 'center' });
+      if (settings?.footerNote) {
+        doc.font('Helvetica').fontSize(7).fillColor('#BBBBBB').text(settings.footerNote, CX - 250, H - 40, { width: 500, align: 'center' });
+      }
+      doc.end();
+    });
+
+    const filename = `certificate-${report.id.slice(-8)}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
