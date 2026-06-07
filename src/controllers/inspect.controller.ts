@@ -1938,6 +1938,12 @@ export async function exportReportDocx(req: AuthenticatedRequest, res: Response)
  * Renders a professional inspection report as PDF using PDFKit.
  * Uses built-in Helvetica (no external font files required).
  */
+interface EmbeddedPhoto {
+  section: string | null;
+  caption: string | null;
+  buffer: Buffer;
+}
+
 function buildPdf(
   report: {
     id: string; title: string; status: string; createdAt: Date;
@@ -1949,6 +1955,7 @@ function buildPdf(
   content: ReportContent,
   project: { name: string; location: string | null; clientName: string | null },
   settings?: InspectorSettings | null,
+  photos?: EmbeddedPhoto[],
 ): Promise<Buffer> {
   return new Promise<Buffer>((resolve, reject) => {
     const BRAND   = '#1E3A5F';
@@ -2164,11 +2171,78 @@ function buildPdf(
         }
       }
 
+      // ── Embedded photos for this section ─────────────────────────────────
+      if (photos && photos.length > 0) {
+        const sectionPhotos = photos.filter(p =>
+          p.section?.toLowerCase().trim() === section.title.toLowerCase().trim()
+        );
+        if (sectionPhotos.length > 0) {
+          y += 10;
+          doc.font('Helvetica-Bold').fontSize(9).fillColor('#888888')
+            .text(`Photos (${sectionPhotos.length})`, LEFT, y);
+          y += 14;
+          // Lay photos in a 2-column grid
+          const PHOTO_W = (WIDTH - 12) / 2;
+          const PHOTO_H = 130;
+          for (let pi = 0; pi < sectionPhotos.length; pi += 2) {
+            if (y + PHOTO_H + 40 > 780) { doc.addPage(); y = TOP_MARGIN; }
+            const col1 = sectionPhotos[pi];
+            const col2 = sectionPhotos[pi + 1];
+            // Draw photos
+            try {
+              doc.image(col1.buffer, LEFT, y, { width: PHOTO_W, height: PHOTO_H, fit: [PHOTO_W, PHOTO_H] });
+            } catch { /* skip unrenderable image */ }
+            if (col2) {
+              try {
+                doc.image(col2.buffer, LEFT + PHOTO_W + 12, y, { width: PHOTO_W, height: PHOTO_H, fit: [PHOTO_W, PHOTO_H] });
+              } catch { /* skip */ }
+            }
+            y += PHOTO_H + 6;
+            // Captions
+            if (col1.caption) {
+              doc.font('Helvetica').fontSize(7).fillColor('#888888')
+                .text(col1.caption.slice(0, 120), LEFT, y, { width: PHOTO_W, lineGap: 1 });
+            }
+            if (col2?.caption) {
+              doc.font('Helvetica').fontSize(7).fillColor('#888888')
+                .text(col2.caption.slice(0, 120), LEFT + PHOTO_W + 12, y, { width: PHOTO_W, lineGap: 1 });
+            }
+            y = doc.y + 14;
+          }
+        }
+      }
+
       // Section divider
       if (y < 780) {
         y += 8;
         doc.moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor(DIVIDER).lineWidth(0.5).stroke();
         y += 16;
+      }
+    }
+
+    // ── Photos with no section (appendix) ─────────────────────────────────
+    if (photos && photos.length > 0) {
+      const unsectionedPhotos = photos.filter(p => !p.section);
+      if (unsectionedPhotos.length > 0) {
+        doc.addPage(); y = TOP_MARGIN;
+        doc.font('Helvetica-Bold').fontSize(14).fillColor(BRAND)
+          .text('Photo Appendix', LEFT, y);
+        y += 24;
+        const PHOTO_W = (WIDTH - 12) / 2;
+        const PHOTO_H = 150;
+        for (let pi = 0; pi < unsectionedPhotos.length; pi += 2) {
+          if (y + PHOTO_H + 40 > 780) { doc.addPage(); y = TOP_MARGIN; }
+          const col1 = unsectionedPhotos[pi];
+          const col2 = unsectionedPhotos[pi + 1];
+          try { doc.image(col1.buffer, LEFT, y, { width: PHOTO_W, height: PHOTO_H, fit: [PHOTO_W, PHOTO_H] }); } catch { /* skip */ }
+          if (col2) {
+            try { doc.image(col2.buffer, LEFT + PHOTO_W + 12, y, { width: PHOTO_W, height: PHOTO_H, fit: [PHOTO_W, PHOTO_H] }); } catch { /* skip */ }
+          }
+          y += PHOTO_H + 6;
+          if (col1.caption) doc.font('Helvetica').fontSize(7).fillColor('#888888').text(col1.caption.slice(0, 120), LEFT, y, { width: PHOTO_W, lineGap: 1 });
+          if (col2?.caption) doc.font('Helvetica').fontSize(7).fillColor('#888888').text(col2.caption.slice(0, 120), LEFT + PHOTO_W + 12, y, { width: PHOTO_W, lineGap: 1 });
+          y = doc.y + 14;
+        }
       }
     }
 
@@ -2244,12 +2318,13 @@ export async function exportReportPdf(req: AuthenticatedRequest, res: Response):
   try {
     const userId = req.user!.userId;
     const { id } = req.params;
+    const includePhotos = req.query.photos !== '0'; // default: include photos
 
     const [report, settings] = await Promise.all([
       prisma.inspectReport.findFirst({
         where: { id, userId },
         include: {
-          project: { select: { name: true, location: true, clientName: true } },
+          project: { select: { id: true, name: true, location: true, clientName: true } },
           user: { select: { firstName: true, lastName: true } },
         },
       }),
@@ -2257,8 +2332,40 @@ export async function exportReportPdf(req: AuthenticatedRequest, res: Response):
     ]);
     if (!report) { sendNotFound(res, 'Report'); return; }
 
+    // Load photo captures and download buffers (best-effort, non-blocking failures)
+    let embeddedPhotos: EmbeddedPhoto[] = [];
+    if (includePhotos) {
+      const captures = await prisma.inspectCapture.findMany({
+        where: { projectId: report.project.id, type: 'photo' },
+        select: { imageUrl: true, content: true, section: true },
+        orderBy: { createdAt: 'asc' },
+        take: 20, // cap at 20 photos to keep PDF size reasonable
+      });
+
+      const photoResults = await Promise.allSettled(
+        captures
+          .filter(c => c.imageUrl)
+          .map(async (c): Promise<EmbeddedPhoto> => {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 8000);
+            try {
+              const res = await fetch(c.imageUrl!, { signal: controller.signal });
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              const ab = await res.arrayBuffer();
+              return { section: c.section, caption: c.content, buffer: Buffer.from(ab) };
+            } finally {
+              clearTimeout(timeout);
+            }
+          })
+      );
+
+      embeddedPhotos = photoResults
+        .filter((r): r is PromiseFulfilledResult<EmbeddedPhoto> => r.status === 'fulfilled')
+        .map(r => r.value);
+    }
+
     const content = report.content as ReportContent;
-    const buffer  = await buildPdf(report, content, report.project, settings);
+    const buffer  = await buildPdf(report, content, report.project, settings, embeddedPhotos.length > 0 ? embeddedPhotos : undefined);
 
     const filename = `${report.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
