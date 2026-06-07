@@ -309,6 +309,36 @@ export async function deleteProject(req: AuthenticatedRequest, res: Response): P
   }
 }
 
+/** Clone a project (structure only — copies name, location, client, template; no captures or reports). */
+export async function cloneProject(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+
+    const source = await prisma.inspectProject.findFirst({
+      where: { id, userId },
+      select: { name: true, location: true, clientName: true, clientEmail: true, description: true, templateId: true },
+    });
+    if (!source) { sendNotFound(res, 'Project'); return; }
+
+    const cloned = await prisma.inspectProject.create({
+      data: {
+        userId,
+        name:        `${source.name} (Copy)`,
+        location:    source.location,
+        clientName:  source.clientName,
+        clientEmail: source.clientEmail,
+        description: source.description,
+        templateId:  source.templateId,
+        status:      'active',
+      },
+    });
+    sendCreated(res, cloned);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CAPTURES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -832,7 +862,7 @@ export async function sendReport(req: AuthenticatedRequest, res: Response): Prom
     const fullReport = await prisma.inspectReport.findFirst({
       where: { id, userId },
       include: {
-        project: { select: { name: true, location: true } },
+        project: { select: { name: true, location: true, clientName: true } },
         user: { select: { firstName: true, lastName: true } },
       },
     });

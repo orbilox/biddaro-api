@@ -7,7 +7,7 @@ import {
   // Templates
   listTemplates, createTemplate, getTemplate, updateTemplate, deleteTemplate,
   // Projects
-  listProjects, createProject, getProject, updateProject, deleteProject,
+  listProjects, createProject, getProject, updateProject, deleteProject, cloneProject,
   // Captures
   listCaptures, addCapture, getCapture, updateCapture, deleteCapture,
   // Reports
@@ -74,9 +74,10 @@ router.delete('/templates/:id', deleteTemplate);
 // ── Projects ──────────────────────────────────────────────────────────────────
 router.get('/projects',         listProjects);
 router.post('/projects',        createProject);
-router.get('/projects/:id',     getProject);
-router.put('/projects/:id',     updateProject);
-router.delete('/projects/:id',  deleteProject);
+router.get('/projects/:id',          getProject);
+router.put('/projects/:id',          updateProject);
+router.delete('/projects/:id',       deleteProject);
+router.post('/projects/:id/clone',   cloneProject);
 
 // ── Captures (field observations per project) ─────────────────────────────────
 router.get('/projects/:id/captures',          listCaptures);
