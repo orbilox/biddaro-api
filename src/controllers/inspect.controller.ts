@@ -18,7 +18,7 @@
 
 import { Request, Response } from 'express';
 import { createHmac, randomBytes } from 'crypto';
-import { ZipArchive } from 'archiver';
+import archiver = require('archiver');
 import OpenAI from 'openai';
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
@@ -3799,7 +3799,7 @@ export async function bulkExportReports(req: AuthenticatedRequest, res: Response
 
     // Build ZIP in memory using archiver
     const zipBuffer = await new Promise<Buffer>((resolve, reject) => {
-      const archive  = new ZipArchive({ zlib: { level: 6 } });
+      const archive  = archiver('zip', { zlib: { level: 6 } });
       const chunks: Buffer[] = [];
 
       archive.on('data',  (chunk: Buffer) => chunks.push(chunk));
