@@ -39,7 +39,11 @@ import {
 import { getPagination } from '../utils/pagination';
 import type { AuthenticatedRequest } from '../types';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let _openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return _openai;
+}
 
 // ─── AI Photo Captioning ──────────────────────────────────────────────────────
 
@@ -50,7 +54,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
  */
 async function captionImage(imageUrl: string): Promise<string> {
   try {
-    const res = await openai.chat.completions.create({
+    const res = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       max_tokens: 300,
       messages: [{
@@ -112,7 +116,7 @@ export async function createTemplate(req: AuthenticatedRequest, res: Response): 
     let structure: object = { sections: [] };
     if (rawContent) {
       try {
-        const parseResponse = await openai.chat.completions.create({
+        const parseResponse = await getOpenAI().chat.completions.create({
           model: 'gpt-4o-mini',
           messages: [
             {
@@ -647,7 +651,7 @@ ${capturesSummary}
 
 Write the full inspection report now as JSON.`;
 
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
@@ -1468,7 +1472,7 @@ Only include results that are genuinely relevant to the query. Return an empty a
 PORTFOLIO (${reports.length} reports):
 ${reportContext}`;
 
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       temperature: 0.2,
       response_format: { type: 'json_object' },
@@ -1597,7 +1601,7 @@ Return a JSON object with this EXACT structure:
 
     const userPrompt = `REPORT A (BASELINE):\n${serializeReport(reportA)}\n\n---\n\nREPORT B (CURRENT):\n${serializeReport(reportB)}`;
 
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       temperature: 0.2,
       response_format: { type: 'json_object' },
@@ -2071,7 +2075,7 @@ export async function importReport(req: AuthenticatedRequest, res: Response): Pr
     const textForAI = rawText.length > 40_000 ? rawText.slice(0, 40_000) + '\n… [truncated]' : rawText;
 
     // ── GPT-4o: parse into structured report ──────────────────────────────
-    const aiRes = await openai.chat.completions.create({
+    const aiRes = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       response_format: { type: 'json_object' },
       messages: [
@@ -3319,7 +3323,7 @@ Write a 4-6 paragraph professional trend summary. Use clear headings (prefix eac
 
 Keep it concise but data-driven. Speak directly to the inspector (use "your portfolio", "you should"). Do not use bullet points for main paragraphs — use flowing prose. End with a brief encouragement or motivational sentence.`;
 
-    const aiResponse = await openai.chat.completions.create({
+    const aiResponse = await getOpenAI().chat.completions.create({
       model: 'gpt-4o-mini',
       max_tokens: 800,
       temperature: 0.7,
