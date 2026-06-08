@@ -1194,6 +1194,8 @@ model InspectReport {
   clientSignature     String?             // base64 encoded SVG path from signature pad
   clientSignedByName  String?             // signer's name as entered by client
   clientSignedAt      DateTime?           // timestamp when client signed
+  inspectorSignature  String?             // base64 PNG data-URL of inspector's drawn signature
+  inspectorSignedAt   DateTime?           // timestamp when inspector applied signature
   tasks         InspectTask[]
   reviewNotes   InspectReviewNote[]
   versions      InspectReportVersion[]

@@ -2902,6 +2902,54 @@ export async function upsertInspectSettings(req: AuthenticatedRequest, res: Resp
   }
 }
 
+// INSPECTOR E-SIGNATURE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function signReport(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+    const { signature } = req.body; // base64 data-URL from canvas
+
+    if (!signature || typeof signature !== 'string' || !signature.startsWith('data:image/')) {
+      res.status(400).json({ success: false, message: 'Invalid signature data' });
+      return;
+    }
+
+    const report = await prisma.inspectReport.findFirst({ where: { id, userId } });
+    if (!report) { res.status(404).json({ success: false, message: 'Report not found' }); return; }
+
+    const updated = await prisma.inspectReport.update({
+      where: { id },
+      data: {
+        inspectorSignature: signature,
+        inspectorSignedAt: new Date(),
+      },
+      select: { id: true, inspectorSignature: true, inspectorSignedAt: true },
+    });
+
+    sendSuccess(res, updated);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function clearInspectorSignature(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+    const report = await prisma.inspectReport.findFirst({ where: { id, userId } });
+    if (!report) { res.status(404).json({ success: false, message: 'Report not found' }); return; }
+    await prisma.inspectReport.update({
+      where: { id },
+      data: { inspectorSignature: null, inspectorSignedAt: null },
+    });
+    sendSuccess(res, { cleared: true });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
 // ANALYTICS
 // ═══════════════════════════════════════════════════════════════════════════════
 

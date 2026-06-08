@@ -35,6 +35,8 @@ import {
   listVersions, restoreVersion,
   // Client signature
   signPublicReport,
+  // Inspector e-signature
+  signReport, clearInspectorSignature,
   // Bulk export
   bulkExportReports,
   // AI trend summary
@@ -99,6 +101,8 @@ router.delete('/reports/:id',                 deleteReport);
 router.post('/reports/:id/send',              sendReport);
 router.post('/reports/:id/share',             shareReport);    // enable public link
 router.delete('/reports/:id/share',           unshareReport);  // disable public link
+router.post('/reports/:id/sign',              signReport);          // inspector e-signature
+router.delete('/reports/:id/sign',            clearInspectorSignature); // remove inspector signature
 router.get('/reports/:id/export/docx',        exportReportDocx);
 router.get('/reports/:id/export/pdf',         exportReportPdf);
 router.get('/reports/:id/export/certificate', exportCertificate);
