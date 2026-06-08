@@ -43,14 +43,17 @@ import {
   generateTrendSummary,
   // Schedule reminders
   triggerScheduleReminders,
+  // Section feedback
+  submitSectionFeedback, listSectionFeedback,
 } from '../controllers/inspect.controller';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 // ── Public endpoints (no auth) ────────────────────────────────────────────────
-router.get('/public/:token',        getPublicReport);
-router.post('/public/:token/sign',  signPublicReport);
+router.get('/public/:token',                getPublicReport);
+router.post('/public/:token/sign',          signPublicReport);
+router.post('/public/:token/feedback',      submitSectionFeedback); // client section reactions
 
 // All other inspect routes require authentication
 router.use(authenticate);
@@ -103,6 +106,7 @@ router.post('/reports/:id/share',             shareReport);    // enable public 
 router.delete('/reports/:id/share',           unshareReport);  // disable public link
 router.post('/reports/:id/sign',              signReport);          // inspector e-signature
 router.delete('/reports/:id/sign',            clearInspectorSignature); // remove inspector signature
+router.get('/reports/:id/feedback',           listSectionFeedback); // client section reactions
 router.get('/reports/:id/export/docx',        exportReportDocx);
 router.get('/reports/:id/export/pdf',         exportReportPdf);
 router.get('/reports/:id/export/certificate', exportCertificate);

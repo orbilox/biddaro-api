@@ -1148,6 +1148,70 @@ export async function signPublicReport(req: Request, res: Response): Promise<voi
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CLIENT SECTION FEEDBACK — reactions & comments on public report sections
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function submitSectionFeedback(req: Request, res: Response): Promise<void> {
+  try {
+    const { token } = req.params;
+    const { sectionId, sectionTitle, reaction, comment } = req.body;
+
+    if (!sectionId || !sectionTitle || !['thumbs_up', 'thumbs_down'].includes(reaction)) {
+      res.status(400).json({ success: false, message: 'sectionId, sectionTitle, and reaction (thumbs_up|thumbs_down) are required' });
+      return;
+    }
+
+    const report = await prisma.inspectReport.findFirst({
+      where: { publicToken: token, publicEnabled: true },
+      select: { id: true, publicExpiry: true },
+    });
+    if (!report) { res.status(404).json({ success: false, message: 'Report not found' }); return; }
+    if (report.publicExpiry && new Date(report.publicExpiry) < new Date()) {
+      res.status(410).json({ success: false, message: 'This share link has expired' });
+      return;
+    }
+
+    // Upsert — one reaction per token per section (update if already exists)
+    const existing = await prisma.inspectSectionFeedback.findFirst({
+      where: { reportId: report.id, token, sectionId },
+    });
+
+    let feedback;
+    if (existing) {
+      feedback = await prisma.inspectSectionFeedback.update({
+        where: { id: existing.id },
+        data: { reaction, comment: comment ?? null },
+      });
+    } else {
+      feedback = await prisma.inspectSectionFeedback.create({
+        data: { reportId: report.id, sectionId, sectionTitle, reaction, comment: comment ?? null, token },
+      });
+    }
+
+    sendSuccess(res, feedback);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function listSectionFeedback(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+    const report = await getOwnedReport(id, userId);
+    if (!report) { sendNotFound(res, 'Report'); return; }
+
+    const feedback = await prisma.inspectSectionFeedback.findMany({
+      where: { reportId: id },
+      orderBy: { createdAt: 'asc' },
+    });
+    sendSuccess(res, feedback);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // TASKS — Create from findings, track to completion
 // ═══════════════════════════════════════════════════════════════════════════════
 

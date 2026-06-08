@@ -1196,9 +1196,10 @@ model InspectReport {
   clientSignedAt      DateTime?           // timestamp when client signed
   inspectorSignature  String?             // base64 PNG data-URL of inspector's drawn signature
   inspectorSignedAt   DateTime?           // timestamp when inspector applied signature
-  tasks         InspectTask[]
-  reviewNotes   InspectReviewNote[]
-  versions      InspectReportVersion[]
+  tasks            InspectTask[]
+  reviewNotes      InspectReviewNote[]
+  versions         InspectReportVersion[]
+  sectionFeedback  InspectSectionFeedback[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -1258,6 +1259,21 @@ model InspectReviewNote {
 
   @@index([reportId])
   @@index([userId])
+}
+
+model InspectSectionFeedback {
+  id           String        @id @default(cuid())
+  reportId     String
+  report       InspectReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sectionId    String                       // section id from report content JSON
+  sectionTitle String                       // section title for inspector display
+  reaction     String                       // thumbs_up | thumbs_down
+  comment      String?                      // optional text note from client
+  token        String                       // public share token (client session ID)
+  createdAt    DateTime      @default(now())
+
+  @@index([reportId])
+  @@index([token])
 }
 
 model InspectFloorPlan {
