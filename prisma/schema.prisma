@@ -87,6 +87,7 @@ model User {
   inspectReviewNotes     InspectReviewNote[]
   inspectFloorPlans      InspectFloorPlan[]
   inspectSettings        InspectSettings?
+  inspectWebhooks        InspectWebhook[]
   inspectSchedules         InspectSchedule[]
   inspectReportVersions    InspectReportVersion[]
 }
@@ -1144,11 +1145,14 @@ model InspectProject {
   clientEmail String?
   description String?
   status      String           @default("active")   // active|completed|archived
+  clientPortalToken   String?  @unique  // public token for client-facing portal
+  clientPortalEnabled Boolean  @default(false)
   captures    InspectCapture[]
   reports     InspectReport[]
   tasks       InspectTask[]
   floorPlans  InspectFloorPlan[]
   schedules   InspectSchedule[]
+  members     InspectProjectMember[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -1276,6 +1280,20 @@ model InspectSectionFeedback {
   @@index([token])
 }
 
+model InspectWebhook {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url       String                       // HTTPS endpoint to POST to
+  events    Json                         // String[] e.g. ["report.status_changed","capture.created"]
+  secret    String                       // HMAC-SHA256 signing secret
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
 model InspectFloorPlan {
   id          String         @id @default(cuid())
   projectId   String
@@ -1325,6 +1343,22 @@ model InspectSchedule {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
+  @@index([projectId])
+  @@index([userId])
+}
+
+model InspectProjectMember {
+  id        String         @id @default(cuid())
+  projectId String
+  project   InspectProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  email     String                       // invited inspector email
+  userId    String?                      // populated if they have a Biddaro account
+  role      String         @default("inspector")  // inspector|viewer
+  addedBy   String                       // userId of project owner who added them
+  name      String?                      // display name (filled from User if found)
+  createdAt DateTime       @default(now())
+
+  @@unique([projectId, email])
   @@index([projectId])
   @@index([userId])
 }

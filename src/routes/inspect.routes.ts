@@ -45,6 +45,12 @@ import {
   triggerScheduleReminders,
   // Section feedback
   submitSectionFeedback, listSectionFeedback,
+  // Webhooks
+  listWebhooks, createWebhook, updateWebhook, deleteWebhook, testWebhook,
+  // Team members
+  listProjectMembers, addProjectMember, updateProjectMember, removeProjectMember,
+  // Client portal
+  enableClientPortal, disableClientPortal, getClientPortal,
 } from '../controllers/inspect.controller';
 
 const router = Router();
@@ -54,6 +60,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 router.get('/public/:token',                getPublicReport);
 router.post('/public/:token/sign',          signPublicReport);
 router.post('/public/:token/feedback',      submitSectionFeedback); // client section reactions
+router.get('/client-portal/:token',         getClientPortal);       // project-level client portal
 
 // All other inspect routes require authentication
 router.use(authenticate);
@@ -143,5 +150,22 @@ router.post('/reports/bulk-export',          bulkExportReports);
 // ── Report versioning ─────────────────────────────────────────────────────────
 router.get('/reports/:id/versions',          listVersions);
 router.post('/reports/:id/versions/:vid/restore', restoreVersion);
+
+// ── Webhooks ──────────────────────────────────────────────────────────────────
+router.get('/webhooks',               listWebhooks);
+router.post('/webhooks',              createWebhook);
+router.put('/webhooks/:id',           updateWebhook);
+router.delete('/webhooks/:id',        deleteWebhook);
+router.post('/webhooks/:id/test',     testWebhook);
+
+// ── Project team members ───────────────────────────────────────────────────────
+router.get('/projects/:id/members',       listProjectMembers);
+router.post('/projects/:id/members',      addProjectMember);
+router.put('/projects/:id/members/:mid',  updateProjectMember);
+router.delete('/projects/:id/members/:mid', removeProjectMember);
+
+// ── Client portal ─────────────────────────────────────────────────────────────
+router.post('/projects/:id/client-portal',   enableClientPortal);
+router.delete('/projects/:id/client-portal', disableClientPortal);
 
 export default router;

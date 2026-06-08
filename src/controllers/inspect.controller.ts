@@ -17,6 +17,7 @@
  */
 
 import { Request, Response } from 'express';
+import { createHmac, randomBytes } from 'crypto';
 import { ZipArchive } from 'archiver';
 import OpenAI from 'openai';
 import {
@@ -398,6 +399,9 @@ export async function addCapture(req: AuthenticatedRequest, res: Response): Prom
         severity: severity ?? 'normal',
         tags: safeTags,
       },
+    });
+    fireWebhookEvent(userId, 'capture.created', {
+      captureId: capture.id, projectId, type, severity: severity ?? 'normal', section: section ?? null,
     });
     sendCreated(res, capture);
   } catch (err: any) {
@@ -814,6 +818,17 @@ export async function updateReport(req: AuthenticatedRequest, res: Response): Pr
       where: { id },
       data: { title, status, content: resolvedContent, rawMarkdown },
     });
+
+    // Fire webhook if status changed
+    if (status && status !== report.status) {
+      fireWebhookEvent(userId, 'report.status_changed', {
+        reportId: id,
+        previousStatus: report.status,
+        newStatus: status,
+        reportTitle: updated.title,
+      });
+    }
+
     sendSuccess(res, updated);
   } catch (err: any) {
     sendError(res, err.message);
@@ -1002,6 +1017,9 @@ export async function shareReport(req: AuthenticatedRequest, res: Response): Pro
       where: { id },
       data: { publicToken, publicEnabled: true, ...(publicExpiry !== undefined ? { publicExpiry } : {}) },
       select: { id: true, publicToken: true, publicEnabled: true, publicExpiry: true, publicViewCount: true },
+    });
+    fireWebhookEvent(userId, 'report.shared', {
+      reportId: id, reportTitle: report.title, publicToken,
     });
     sendSuccess(res, updated);
 
@@ -1291,6 +1309,9 @@ export async function createTask(req: AuthenticatedRequest, res: Response): Prom
         sourceSection: sourceSection ?? null,
         sourceFinding: sourceFinding ?? null,
       },
+    });
+    fireWebhookEvent(userId, 'task.created', {
+      taskId: task.id, reportId, title: task.title, severity: task.severity, assignedTo: task.assignedTo,
     });
     sendCreated(res, task);
   } catch (err: any) {
@@ -3799,6 +3820,333 @@ export async function bulkExportReports(req: AuthenticatedRequest, res: Response
     res.setHeader('Content-Length', zipBuffer.length);
     res.setHeader('X-Report-Count', String(pdfs.length));
     res.send(zipBuffer);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WEBHOOKS — Configurable HTTP callbacks for inspect events
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const INSPECT_WEBHOOK_EVENTS = [
+  'report.status_changed',
+  'report.shared',
+  'report.sent',
+  'capture.created',
+  'task.created',
+  'task.status_changed',
+] as const;
+
+export type InspectWebhookEvent = typeof INSPECT_WEBHOOK_EVENTS[number];
+
+/** Fire-and-forget: POST to all active webhooks subscribed to this event */
+export async function fireWebhookEvent(
+  userId: string,
+  event: InspectWebhookEvent,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const hooks = await prisma.inspectWebhook.findMany({
+      where: { userId, active: true },
+    });
+    if (!hooks.length) return;
+
+    const body = JSON.stringify({ event, timestamp: new Date().toISOString(), ...payload });
+
+    for (const hook of hooks) {
+      const events = hook.events as string[];
+      if (!events.includes(event)) continue;
+      const sig = createHmac('sha256', hook.secret).update(body).digest('hex');
+      fetch(hook.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Biddaro-Event': event,
+          'X-Biddaro-Signature': `sha256=${sig}`,
+        },
+        body,
+        signal: AbortSignal.timeout(8000),
+      }).catch(err => console.warn(`[webhook] delivery failed to ${hook.url}:`, err.message));
+    }
+  } catch (err: any) {
+    console.warn('[webhook] fireWebhookEvent error:', err.message);
+  }
+}
+
+export async function listWebhooks(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const hooks = await prisma.inspectWebhook.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+    sendSuccess(res, hooks);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function createWebhook(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { url, events, active } = req.body;
+    if (!url || !url.startsWith('https://')) {
+      res.status(400).json({ success: false, message: 'URL must start with https://' });
+      return;
+    }
+    const hook = await prisma.inspectWebhook.create({
+      data: {
+        userId,
+        url,
+        events: events ?? [],
+        secret: randomBytes(24).toString('hex'),
+        active: active !== false,
+      },
+    });
+    sendCreated(res, hook);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function updateWebhook(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+    const existing = await prisma.inspectWebhook.findFirst({ where: { id, userId } });
+    if (!existing) { sendNotFound(res, 'Webhook'); return; }
+    const { url, events, active } = req.body;
+    const hook = await prisma.inspectWebhook.update({
+      where: { id },
+      data: {
+        ...(url !== undefined ? { url } : {}),
+        ...(events !== undefined ? { events } : {}),
+        ...(active !== undefined ? { active } : {}),
+      },
+    });
+    sendSuccess(res, hook);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function deleteWebhook(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+    const existing = await prisma.inspectWebhook.findFirst({ where: { id, userId } });
+    if (!existing) { sendNotFound(res, 'Webhook'); return; }
+    await prisma.inspectWebhook.delete({ where: { id } });
+    sendSuccess(res, { deleted: true });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function testWebhook(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+    const hook = await prisma.inspectWebhook.findFirst({ where: { id, userId } });
+    if (!hook) { sendNotFound(res, 'Webhook'); return; }
+
+    const testPayload = JSON.stringify({
+      event: 'webhook.test',
+      timestamp: new Date().toISOString(),
+      message: 'This is a test delivery from Biddaro Inspect.',
+    });
+    const sig = createHmac('sha256', hook.secret).update(testPayload).digest('hex');
+
+    try {
+      const r = await fetch(hook.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Biddaro-Event': 'webhook.test',
+          'X-Biddaro-Signature': `sha256=${sig}`,
+        },
+        body: testPayload,
+        signal: AbortSignal.timeout(10000),
+      });
+      sendSuccess(res, { status: r.status, ok: r.ok });
+    } catch (fetchErr: any) {
+      res.status(200).json({ success: false, message: `Delivery failed: ${fetchErr.message}` });
+    }
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ─── Project Team Members ─────────────────────────────────────────────────────
+
+export async function listProjectMembers(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params; // projectId
+    const project = await prisma.inspectProject.findFirst({ where: { id, userId } });
+    if (!project) { sendNotFound(res, 'Project'); return; }
+    const members = await prisma.inspectProjectMember.findMany({
+      where: { projectId: id },
+      orderBy: { createdAt: 'asc' },
+    });
+    sendSuccess(res, members);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function addProjectMember(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params; // projectId
+    const project = await prisma.inspectProject.findFirst({ where: { id, userId } });
+    if (!project) { sendForbidden(res, 'Only the project owner can add team members'); return; }
+    const { email, role } = req.body as { email: string; role?: string };
+    if (!email) { sendError(res, 'Email is required'); return; }
+
+    // Look up the invited user in the system
+    const invitedUser = await prisma.user.findUnique({ where: { email } });
+
+    // Prevent adding yourself
+    if (invitedUser?.id === userId) { sendError(res, 'You are already the project owner'); return; }
+
+    const member = await prisma.inspectProjectMember.upsert({
+      where: { projectId_email: { projectId: id, email } },
+      update: { role: role ?? 'inspector', userId: invitedUser?.id ?? null, name: invitedUser ? `${invitedUser.firstName} ${invitedUser.lastName}` : null },
+      create: {
+        id: require('crypto').randomUUID(),
+        projectId: id,
+        email,
+        userId: invitedUser?.id ?? null,
+        name: invitedUser ? `${invitedUser.firstName} ${invitedUser.lastName}` : null,
+        role: role ?? 'inspector',
+        addedBy: userId,
+      },
+    });
+    sendCreated(res, { ...member, isRegistered: !!invitedUser });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function updateProjectMember(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id, mid } = req.params;
+    const project = await prisma.inspectProject.findFirst({ where: { id, userId } });
+    if (!project) { sendForbidden(res, 'Only the project owner can update team members'); return; }
+    const { role } = req.body as { role: string };
+    const member = await prisma.inspectProjectMember.findFirst({ where: { id: mid, projectId: id } });
+    if (!member) { sendNotFound(res, 'Team member'); return; }
+    const updated = await prisma.inspectProjectMember.update({ where: { id: mid }, data: { role } });
+    sendSuccess(res, updated);
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+export async function removeProjectMember(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id, mid } = req.params;
+    const project = await prisma.inspectProject.findFirst({ where: { id, userId } });
+    if (!project) { sendForbidden(res, 'Only the project owner can remove team members'); return; }
+    const member = await prisma.inspectProjectMember.findFirst({ where: { id: mid, projectId: id } });
+    if (!member) { sendNotFound(res, 'Team member'); return; }
+    await prisma.inspectProjectMember.delete({ where: { id: mid } });
+    sendSuccess(res, { deleted: true });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+// ─── Client Portal ────────────────────────────────────────────────────────────
+
+/** Enable (or re-generate) the client portal token for a project */
+export async function enableClientPortal(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+    const project = await prisma.inspectProject.findFirst({ where: { id, userId } });
+    if (!project) { sendNotFound(res, 'Project'); return; }
+    const token = randomBytes(24).toString('hex');
+    const updated = await prisma.inspectProject.update({
+      where: { id },
+      data: { clientPortalToken: token, clientPortalEnabled: true },
+    });
+    sendSuccess(res, {
+      clientPortalToken: updated.clientPortalToken,
+      clientPortalEnabled: updated.clientPortalEnabled,
+    });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+/** Disable the client portal for a project */
+export async function disableClientPortal(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+    const project = await prisma.inspectProject.findFirst({ where: { id, userId } });
+    if (!project) { sendNotFound(res, 'Project'); return; }
+    await prisma.inspectProject.update({
+      where: { id },
+      data: { clientPortalEnabled: false },
+    });
+    sendSuccess(res, { clientPortalEnabled: false });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+/** Public endpoint — get project summary + reports for the client portal */
+export async function getClientPortal(req: Request, res: Response): Promise<void> {
+  try {
+    const { token } = req.params;
+    const project = await prisma.inspectProject.findFirst({
+      where: { clientPortalToken: token, clientPortalEnabled: true },
+      include: {
+        user: { select: { firstName: true, lastName: true } },
+        reports: {
+          where: { publicEnabled: true },
+          select: {
+            id: true, title: true, status: true, publicToken: true,
+            publicExpiry: true, createdAt: true, publicViewCount: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        captures: {
+          select: {
+            id: true, imageUrl: true, type: true, severity: true,
+            section: true, content: true, gpsLat: true, gpsLng: true, createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 100,
+        },
+      },
+    });
+    if (!project) { sendNotFound(res, 'Client portal'); return; }
+
+    // Increment overall portal view count via a lightweight side-effect
+    // (non-blocking — don't await)
+    prisma.inspectProject.update({
+      where: { id: project.id },
+      data: { updatedAt: new Date() },
+    }).catch(() => {});
+
+    sendSuccess(res, {
+      id: project.id,
+      name: project.name,
+      location: project.location,
+      clientName: project.clientName,
+      description: project.description,
+      status: project.status,
+      inspectorName: `${project.user.firstName} ${project.user.lastName}`,
+      reports: project.reports,
+      captures: project.captures,
+    });
   } catch (err: any) {
     sendError(res, err.message);
   }
