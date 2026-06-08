@@ -26,7 +26,7 @@ import {
   Footer, PageNumber, Header, LevelFormat, ImageRun,
 } from 'docx';
 import PDFDocument from 'pdfkit';
-import { PDFParse } from 'pdf-parse';
+import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
@@ -2051,9 +2051,7 @@ export async function importReport(req: AuthenticatedRequest, res: Response): Pr
     // ── Extract raw text from the uploaded file ────────────────────────────
     let rawText = '';
     if (mime === 'application/pdf' || file.originalname.endsWith('.pdf')) {
-      const uint8 = new Uint8Array(buf);
-      const parser = new PDFParse({ data: uint8 });
-      const result = await parser.getText();
+      const result = await pdfParse(buf);
       rawText = result.text;
     } else if (
       mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
