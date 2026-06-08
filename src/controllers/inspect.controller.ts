@@ -17,7 +17,7 @@
  */
 
 import { Request, Response } from 'express';
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac, randomBytes, randomUUID } from 'crypto';
 import archiver = require('archiver');
 import OpenAI from 'openai';
 import {
@@ -4015,7 +4015,7 @@ export async function addProjectMember(req: AuthenticatedRequest, res: Response)
       where: { projectId_email: { projectId: id, email } },
       update: { role: role ?? 'inspector', userId: invitedUser?.id ?? null, name: invitedUser ? `${invitedUser.firstName} ${invitedUser.lastName}` : null },
       create: {
-        id: require('crypto').randomUUID(),
+        id: randomUUID(),
         projectId: id,
         email,
         userId: invitedUser?.id ?? null,
