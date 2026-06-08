@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, ObjectCannedACL } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
 import { authenticate } from '../middleware/auth';
 import { sendSuccess, sendError } from '../utils/response';
@@ -58,6 +58,7 @@ async function uploadToS3(file: Express.Multer.File, folder: string = 'uploads')
     Key: key,
     Body: file.buffer,
     ContentType: file.mimetype,
+    ACL: 'public-read' as ObjectCannedACL,
   }));
 
   return `https://${BUCKET}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${key}`;
