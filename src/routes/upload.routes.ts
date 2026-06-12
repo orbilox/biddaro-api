@@ -22,6 +22,18 @@ const BUCKET = process.env.AWS_S3_BUCKET || 'biddaro-uploads';
 const memoryStorage = multer.memoryStorage();
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const ALLOWED_AUDIO_TYPES = [
+  'audio/m4a',
+  'audio/mp4',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/aac',
+  'audio/webm',
+  'audio/ogg',
+  'audio/x-m4a',       // iOS sometimes sends this for .m4a files
+  'audio/mp4a-latm',   // alternate MPEG-4 audio descriptor
+];
+
 const ALLOWED_DOC_TYPES = [
   'application/pdf',
   'application/msword',
@@ -32,6 +44,7 @@ const ALLOWED_DOC_TYPES = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'text/plain',
   'application/zip',
+  ...ALLOWED_AUDIO_TYPES,
 ];
 const ALLOWED_ALL_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_DOC_TYPES];
 
@@ -118,7 +131,11 @@ router.post('/single', authenticate, uploadAny.single('file'), async (req: Authe
   if (!file) { sendError(res, 'No file uploaded', 400); return; }
 
   try {
-    const folder = ALLOWED_IMAGE_TYPES.includes(file.mimetype) ? 'images' : 'documents';
+    const folder = ALLOWED_IMAGE_TYPES.includes(file.mimetype)
+      ? 'images'
+      : ALLOWED_AUDIO_TYPES.includes(file.mimetype)
+        ? 'audio'
+        : 'documents';
     const url = await uploadToS3(file, folder);
     sendSuccess(res, {
       url,
