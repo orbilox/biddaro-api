@@ -463,6 +463,28 @@ export async function deleteCapture(req: AuthenticatedRequest, res: Response): P
 }
 
 /**
+ * DELETE /inspect/captures/:id
+ * Standalone capture deletion — verifies ownership through the parent project.
+ * Used by the mobile app where only the capture ID is available (not the project ID).
+ */
+export async function deleteCaptureById(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const { id: cid } = req.params;
+    const capture = await prisma.inspectCapture.findFirst({
+      where: { id: cid },
+      select: { id: true, project: { select: { userId: true } } },
+    });
+    if (!capture) { sendNotFound(res, 'Capture'); return; }
+    if (capture.project.userId !== userId) { sendForbidden(res, 'Not authorized'); return; }
+    await prisma.inspectCapture.delete({ where: { id: cid } });
+    sendSuccess(res, { deleted: true });
+  } catch (err: any) {
+    sendError(res, err.message);
+  }
+}
+
+/**
  * POST /inspect/projects/:id/captures/:cid/caption
  * Runs GPT-4o Vision on the photo capture and saves the AI-generated caption
  * to the capture's `content` field. Returns the updated capture.

@@ -9,7 +9,7 @@ import {
   // Projects
   listProjects, createProject, getProject, updateProject, deleteProject, cloneProject,
   // Captures
-  listCaptures, addCapture, getCapture, updateCapture, deleteCapture,
+  listCaptures, addCapture, getCapture, updateCapture, deleteCapture, deleteCaptureById,
   // Reports
   generateReport, listReports, listAllReports, getReport, updateReport, deleteReport, sendReport,
   exportReportDocx, exportReportPdf, exportCertificate, importReport, listLanguages,
@@ -98,6 +98,8 @@ router.get('/projects/:id/captures/:cid',           getCapture);
 router.put('/projects/:id/captures/:cid',           updateCapture);
 router.delete('/projects/:id/captures/:cid',        deleteCapture);
 router.post('/projects/:id/captures/:cid/caption',  captionCapture);
+// Mobile shortcut — delete by capture ID only (ownership verified via project)
+router.delete('/captures/:id',                deleteCaptureById);
 
 // ── Reports ───────────────────────────────────────────────────────────────────
 router.get('/languages',                       listLanguages);      // Multi-lingual support
