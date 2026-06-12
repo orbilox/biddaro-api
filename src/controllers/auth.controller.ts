@@ -284,8 +284,9 @@ export async function verifyOtp(req: Request, res: Response): Promise<void> {
                        .headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
                     || (req as any).socket?.remoteAddress,
     clientUserAgent: req.headers['user-agent'],
-    fbp: (req as any).cookies?.['_fbp'],
-    fbc: (req as any).cookies?.['_fbc'],
+    fbp:    (req as any).cookies?.['_fbp'],
+    fbc:    (req as any).cookies?.['_fbc'],
+    fbclid: (req.query?.fbclid as string | undefined),
   });
 
   sendSuccess(res, {
