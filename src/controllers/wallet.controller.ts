@@ -74,7 +74,9 @@ export async function deposit(req: AuthenticatedRequest, res: Response): Promise
   capiPurchase({
     value: numAmount, currency: 'INR', contentName: 'wallet_deposit',
     clientIp, clientUserAgent: req.headers['user-agent'] as string,
-    fbp: (req as any).cookies?.['_fbp'], fbc: (req as any).cookies?.['_fbc'],
+    fbp:    (req.body?.fbp    as string | undefined) || (req as any).cookies?.['_fbp'],
+    fbc:    (req.body?.fbc    as string | undefined) || (req as any).cookies?.['_fbc'],
+    fbclid: (req.body?.fbclid as string | undefined) || (req.query?.fbclid as string | undefined),
     sourceUrl: 'https://biddaro.com/wallet',
   });
 

@@ -87,8 +87,10 @@ export async function submitInquiry(req: AuthenticatedRequest, res: Response) {
   const clientIp        = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
                        || req.socket?.remoteAddress;
   const clientUserAgent = req.headers['user-agent'];
-  const fbp = req.cookies?.['_fbp'] as string | undefined;
-  const fbc = req.cookies?.['_fbc'] as string | undefined;
+  // _fbp/_fbc from cookie (same-origin); fbclid from body (passed by frontend from URL param)
+  const fbp    = req.cookies?.['_fbp']                                    as string | undefined;
+  const fbc    = (req.body?.fbc    as string | undefined) || (req.cookies?.['_fbc'] as string | undefined);
+  const fbclid = (req.body?.fbclid as string | undefined) || (req.query?.fbclid    as string | undefined);
 
   const capiBase = {
     email:       inquiry.email,
@@ -97,7 +99,7 @@ export async function submitInquiry(req: AuthenticatedRequest, res: Response) {
     lastName:    inquiry.lastName,
     city:        inquiry.city        ?? undefined,
     country:     'IN',
-    clientIp, clientUserAgent, fbp, fbc,
+    clientIp, clientUserAgent, fbp, fbc, fbclid,
   };
 
   capiLead({ ...capiBase, loanType: inquiry.loanType });
@@ -106,7 +108,8 @@ export async function submitInquiry(req: AuthenticatedRequest, res: Response) {
 
   if (isSubscription) {
     const subId = inquiry.razorpaySubscriptionId ?? undefined;
-    capiSubscribe({ ...capiBase, subscriptionId: subId });
+    // value: 100 INR — Biddaro subscription is ₹100/month (explicit to avoid silent default)
+    capiSubscribe({ ...capiBase, subscriptionId: subId, value: 100 });
     capiPurchase({ ...capiBase, subscriptionId: subId, value: 100, currency: 'INR',
       contentName: inquiry.loanType, sourceUrl: 'https://biddaro.com/loan-apply' });
   }
