@@ -153,6 +153,31 @@ export async function processLoanReminders(req: AuthenticatedRequest, res: Respo
   return sendSuccess(res, { sent });
 }
 
+// ─── Admin: list all loan leads ───────────────────────────────────────────────
+export async function adminListLoanLeads(req: AuthenticatedRequest, res: Response) {
+  const page   = Math.max(1, parseInt(String(req.query.page  || '1')));
+  const limit  = Math.min(100, parseInt(String(req.query.limit || '50')));
+  const skip   = (page - 1) * limit;
+  const filter = req.query.filter as string | undefined; // 'active' | 'converted' | 'optout'
+
+  const where: Record<string, unknown> = {};
+  if (filter === 'active')    { where.converted = false; where.optOut = false; }
+  if (filter === 'converted') { where.converted = true; }
+  if (filter === 'optout')    { where.optOut = true; }
+
+  const [leads, total] = await prisma.$transaction([
+    prisma.loanLead.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+    prisma.loanLead.count({ where }),
+  ]);
+
+  return sendSuccess(res, { leads, total, page, limit });
+}
+
 // ─── Public: one-click unsubscribe ───────────────────────────────────────────
 export async function unsubscribeLead(req: AuthenticatedRequest, res: Response) {
   const { token } = req.params;

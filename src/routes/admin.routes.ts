@@ -27,6 +27,7 @@ import {
   adminPremiumList,
   adminPremiumRevenue,
 } from '../controllers/premium.controller';
+import { adminListLoanLeads } from '../controllers/loanLeads.controller';
 
 const router = Router();
 
@@ -68,6 +69,9 @@ router.delete('/reviews/:id', adminDeleteReview);
 
 // ── Notifications ────────────────────────────────────────────────────────────
 router.post('/broadcast', broadcastNotification);
+
+// ── Loan Leads ───────────────────────────────────────────────────────────────
+router.get('/loan-leads', adminListLoanLeads);
 
 // ── Premium Management ────────────────────────────────────────────────────────
 router.get('/premium/stats', adminPremiumStats);
