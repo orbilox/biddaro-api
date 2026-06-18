@@ -6,8 +6,14 @@ import {
 } from '../controllers/loans.controller';
 import { createLoanOrder, applyLoanPaid, createSubscription } from '../controllers/razorpayLoans.controller';
 import { submitInquiry, adminListInquiries, adminUpdateInquiry } from '../controllers/loanInquiries.controller';
+import { createLead, processLoanReminders, unsubscribeLead } from '../controllers/loanLeads.controller';
 
 const router = Router();
+
+// ─── Lead capture + follow-up reminders ─────────────────────────────────────
+router.post('/lead',                   createLead);           // public — pre-payment contact capture
+router.post('/reminders/process',      processLoanReminders); // cron-secret protected
+router.get ('/lead/unsubscribe/:token', unsubscribeLead);      // public — one-click unsubscribe
 
 // ─── India Razorpay fee routes (must be before /:id) ──────────────────────────
 router.post('/india/order',        createLoanOrder);           // public

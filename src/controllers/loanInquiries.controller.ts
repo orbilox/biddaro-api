@@ -114,6 +114,12 @@ export async function submitInquiry(req: AuthenticatedRequest, res: Response) {
       contentName: inquiry.loanType, sourceUrl: 'https://biddaro.com/loan-apply' });
   }
 
+  // Stop follow-up journey — user has converted
+  await prisma.loanLead.updateMany({
+    where: { email: inquiry.email, converted: false },
+    data:  { converted: true },
+  });
+
   return sendSuccess(res, { inquiry }, 'Inquiry recorded successfully', 201);
 }
 

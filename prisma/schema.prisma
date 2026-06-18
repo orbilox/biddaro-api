@@ -606,6 +606,25 @@ model LoanInquiry {
   updatedAt           DateTime @updatedAt
 }
 
+// Pre-payment lead capture — created when user fills personal info on loan form
+// before completing Razorpay payment; used for follow-up reminder journey.
+model LoanLead {
+  id              String    @id @default(cuid())
+  name            String
+  email           String
+  phone           String
+  loanType        String?
+  amount          Float?
+  city            String?
+  source          String?           // page path or utm_source
+  converted       Boolean   @default(false)
+  reminderStage   Int       @default(0)   // 0=no email sent, 1–4=emails sent
+  lastReminderAt  DateTime?
+  optOut          Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
 model BuildCheckItem {
   id        String       @id @default(cuid())
   sectionId String

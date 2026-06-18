@@ -653,3 +653,126 @@ export async function sendScheduleReminderEmail(opts: {
     }),
   });
 }
+
+// ─── Loan Follow-Up Journey (4 stages) ────────────────────────────────────────
+
+interface LoanFollowupOpts {
+  toEmail:  string;
+  toName:   string;
+  loanType: string;
+  applyUrl: string;
+  unsubUrl: string;
+}
+
+function loanFollowupFooter(unsubUrl: string): string {
+  return `You received this because you started a loan application on Biddaro. <a href="${unsubUrl}" style="color:#9ca3af;">Unsubscribe from loan reminders</a>`;
+}
+
+function loanTypeLabel(raw: string): string {
+  return raw
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/** Stage 1 — 1 hour after lead: warm nudge */
+export async function sendLoanFollowupStage1(opts: LoanFollowupOpts): Promise<void> {
+  const { toEmail, toName, loanType, applyUrl, unsubUrl } = opts;
+  const loanLabel = loanTypeLabel(loanType);
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: toEmail, name: toName }],
+    subject: `You're one step away — complete your ${loanLabel} application`,
+    htmlContent: brandedHtml({
+      preheader: `${toName}, your loan application is waiting. Complete it in just 2 minutes.`,
+      bodyTitle: `Complete Your ${loanLabel} Application`,
+      bodyLines: [
+        `Hi ${toName},`,
+        `You recently started a <strong>${loanLabel}</strong> application on Biddaro but didn't finish. No worries — your progress is saved and it only takes 2 minutes to complete.`,
+        `Once you pay the small ₹100/month eligibility fee, our loan advisors will review your application and connect you with the best lenders for your needs.`,
+        `<strong>No documentation needed upfront.</strong> Just complete the form and we'll guide you through next steps.`,
+      ],
+      ctaLink:    applyUrl,
+      ctaLabel:   'Complete My Application →',
+      footerNote: loanFollowupFooter(unsubUrl),
+    }),
+  });
+}
+
+/** Stage 2 — 24 hours after stage 1: social proof */
+export async function sendLoanFollowupStage2(opts: LoanFollowupOpts): Promise<void> {
+  const { toEmail, toName, loanType, applyUrl, unsubUrl } = opts;
+  const loanLabel = loanTypeLabel(loanType);
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: toEmail, name: toName }],
+    subject: `Your ${loanLabel} application is still waiting`,
+    htmlContent: brandedHtml({
+      preheader: `10,000+ contractors have already used Biddaro to get their construction loans approved.`,
+      bodyTitle: `Your Loan Application Is Waiting`,
+      bodyLines: [
+        `Hi ${toName},`,
+        `Over <strong>10,000 contractors and builders</strong> across India have used Biddaro to get their ${loanLabel.toLowerCase()} approved — many within 48 hours of applying.`,
+        `Your application is still incomplete. Pick up where you left off — it takes under 2 minutes to finish.`,
+        `<strong>What happens after you apply:</strong><br/>
+         ✅ Our team reviews your application within 24 hours<br/>
+         ✅ We match you with the best lender for your profile<br/>
+         ✅ Get funds disbursed directly to your account`,
+      ],
+      ctaLink:    applyUrl,
+      ctaLabel:   'Finish My Application →',
+      footerNote: loanFollowupFooter(unsubUrl),
+    }),
+  });
+}
+
+/** Stage 3 — 3 days after stage 2: benefit-focused */
+export async function sendLoanFollowupStage3(opts: LoanFollowupOpts): Promise<void> {
+  const { toEmail, toName, loanType, applyUrl, unsubUrl } = opts;
+  const loanLabel = loanTypeLabel(loanType);
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: toEmail, name: toName }],
+    subject: `Get the funds your project needs — apply for a ${loanLabel} today`,
+    htmlContent: brandedHtml({
+      preheader: `Competitive rates, fast approval, and a dedicated loan advisor — all in one place.`,
+      bodyTitle: `Don't Let Funding Hold Your Project Back`,
+      bodyLines: [
+        `Hi ${toName},`,
+        `We know construction projects can stall when funds don't arrive on time. Biddaro's ${loanLabel.toLowerCase()} is designed to move fast so your project doesn't stop.`,
+        `<strong>Why contractors choose Biddaro:</strong><br/>
+         🏦 Competitive rates from top lenders<br/>
+         ⚡ Fast approval — decisions within 48 hours<br/>
+         🤝 Dedicated loan advisor throughout the process<br/>
+         📋 Minimal paperwork, fully online`,
+        `Your application is still open. Complete it today and our team will take it from there.`,
+      ],
+      ctaLink:    applyUrl,
+      ctaLabel:   'Apply Now — Takes 2 Minutes →',
+      footerNote: loanFollowupFooter(unsubUrl),
+    }),
+  });
+}
+
+/** Stage 4 — 7 days after stage 3: urgency / final nudge */
+export async function sendLoanFollowupStage4(opts: LoanFollowupOpts): Promise<void> {
+  const { toEmail, toName, loanType, applyUrl, unsubUrl } = opts;
+  const loanLabel = loanTypeLabel(loanType);
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: toEmail, name: toName }],
+    subject: `Final reminder — your ${loanLabel} offer is still available`,
+    htmlContent: brandedHtml({
+      preheader: `This is our last follow-up. Your application is waiting — complete it before we close the slot.`,
+      bodyTitle: `Last Chance — Complete Your Application`,
+      bodyLines: [
+        `Hi ${toName},`,
+        `This is our final reminder about your <strong>${loanLabel}</strong> application. We don't want you to miss out on funding for your project.`,
+        `Our loan advisors have limited capacity each week — if you don't complete your application soon, we may not be able to hold your slot.`,
+        `It takes less than 2 minutes to finish. Click below and our team will get your application in front of the right lenders immediately.`,
+      ],
+      ctaLink:    applyUrl,
+      ctaLabel:   'Complete My Application Now →',
+      footerNote: loanFollowupFooter(unsubUrl),
+    }),
+  });
+}
