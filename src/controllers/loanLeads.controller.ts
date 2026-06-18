@@ -6,24 +6,33 @@ import {
   sendLoanFollowupStage2,
   sendLoanFollowupStage3,
   sendLoanFollowupStage4,
+  sendLoanFollowupStage5,
+  sendLoanFollowupStage6,
+  sendLoanFollowupStage7,
 } from '../utils/email';
 import { sendPushToUser } from '../utils/push';
 import type { AuthenticatedRequest } from '../types';
 
 const STAGE_PUSH_BODIES = [
   '',
-  "You're one step away — complete your application",
-  'Your loan application is still waiting for you',
-  'Get the funds you need — apply for your loan today',
-  'Final reminder: your loan offer is still available',
+  "You're one step away — complete your loan application",
+  'Your profile looks eligible — confirm your loan now ✓',
+  'Pre-approval check started — complete the last step',
+  '🎉 Your loan has been pre-approved — claim it now!',
+  'Your pre-approved loan amount is waiting for you',
+  '⏰ URGENT: Your pre-approved offer expires in 48 hours',
+  '🔴 Last chance — your loan offer closes tonight',
 ];
 
-// ─── Thresholds for each reminder stage (in ms) ───────────────────────────────
+// ─── 7-stage journey, all within 7 days ──────────────────────────────────────
 const STAGE_DELAYS_MS = [
-  1  * 60 * 60 * 1000,  // stage 0→1: 1 hour  after lead created
-  24 * 60 * 60 * 1000,  // stage 1→2: 24 hours after stage 1
-  3  * 24 * 60 * 60 * 1000,  // stage 2→3: 3 days after stage 2
-  7  * 24 * 60 * 60 * 1000,  // stage 3→4: 7 days after stage 3
+  30  * 60 * 1000,            // 0→1: 30 min after lead captured
+  5.5 * 60 * 60 * 1000,      // 1→2: 5.5h  (6h total from capture)
+  18  * 60 * 60 * 1000,      // 2→3: 18h   (24h total)
+  24  * 60 * 60 * 1000,      // 3→4: 24h   (2 days total)
+  2   * 24 * 60 * 60 * 1000, // 4→5: 2 days (4 days total)
+  2   * 24 * 60 * 60 * 1000, // 5→6: 2 days (6 days total)
+  24  * 60 * 60 * 1000,      // 6→7: 24h   (7 days total)
 ];
 
 const STAGE_EMAIL_FNS = [
@@ -31,6 +40,9 @@ const STAGE_EMAIL_FNS = [
   sendLoanFollowupStage2,
   sendLoanFollowupStage3,
   sendLoanFollowupStage4,
+  sendLoanFollowupStage5,
+  sendLoanFollowupStage6,
+  sendLoanFollowupStage7,
 ];
 
 // ─── Public: capture lead before payment ─────────────────────────────────────
@@ -94,7 +106,7 @@ export async function processLoanReminders(req: AuthenticatedRequest, res: Respo
     where: {
       converted:     false,
       optOut:        false,
-      reminderStage: { lt: 4 },
+      reminderStage: { lt: 7 },
     },
   });
 
@@ -121,6 +133,7 @@ export async function processLoanReminders(req: AuthenticatedRequest, res: Respo
         toEmail:  lead.email,
         toName:   lead.name,
         loanType: lead.loanType || 'construction loan',
+        amount:   lead.amount,
         applyUrl,
         unsubUrl,
       });

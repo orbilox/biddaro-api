@@ -660,6 +660,7 @@ interface LoanFollowupOpts {
   toEmail:  string;
   toName:   string;
   loanType: string;
+  amount?:  number | null;
   applyUrl: string;
   unsubUrl: string;
 }
@@ -674,22 +675,30 @@ function loanTypeLabel(raw: string): string {
     .replace(/\b\w/g, c => c.toUpperCase());
 }
 
-/** Stage 1 — 1 hour after lead: warm nudge */
+function fmtAmount(amount: number | null | undefined): string {
+  if (!amount) return '';
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+}
+
+/** Stage 1 — 30 min after lead: warm nudge, details saved */
 export async function sendLoanFollowupStage1(opts: LoanFollowupOpts): Promise<void> {
   const { toEmail, toName, loanType, applyUrl, unsubUrl } = opts;
   const loanLabel = loanTypeLabel(loanType);
   await brevoSend({
     sender: SENDER(),
     to: [{ email: toEmail, name: toName }],
-    subject: `You're one step away — complete your ${loanLabel} application`,
+    subject: `Your ${loanLabel} application is saved — finish in 2 minutes`,
     htmlContent: brandedHtml({
-      preheader: `${toName}, your loan application is waiting. Complete it in just 2 minutes.`,
-      bodyTitle: `Complete Your ${loanLabel} Application`,
+      preheader: `${toName}, your details are saved. Complete your loan application right now.`,
+      bodyTitle: `You're One Step Away`,
       bodyLines: [
         `Hi ${toName},`,
-        `You recently started a <strong>${loanLabel}</strong> application on Biddaro but didn't finish. No worries — your progress is saved and it only takes 2 minutes to complete.`,
-        `Once you pay the small ₹100/month eligibility fee, our loan advisors will review your application and connect you with the best lenders for your needs.`,
-        `<strong>No documentation needed upfront.</strong> Just complete the form and we'll guide you through next steps.`,
+        `You started a <strong>${loanLabel}</strong> application on Biddaro a few minutes ago — your details are saved and you're almost there.`,
+        `<div style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:6px;margin:8px 0;">
+           <p style="margin:0;font-size:14px;color:#166534;font-weight:600;">✅ Your application is ready to submit</p>
+           <p style="margin:6px 0 0;font-size:13px;color:#166534;">Just complete the final step to get matched with lenders.</p>
+         </div>`,
+        `No documentation needed upfront. It takes less than 2 minutes — our advisors handle the rest.`,
       ],
       ctaLink:    applyUrl,
       ctaLabel:   'Complete My Application →',
@@ -698,84 +707,196 @@ export async function sendLoanFollowupStage1(opts: LoanFollowupOpts): Promise<vo
   });
 }
 
-/** Stage 2 — 24 hours after stage 1: social proof with prominent loan type callout */
+/** Stage 2 — 6h after capture: eligibility tease */
 export async function sendLoanFollowupStage2(opts: LoanFollowupOpts): Promise<void> {
   const { toEmail, toName, loanType, applyUrl, unsubUrl } = opts;
   const loanLabel = loanTypeLabel(loanType);
   await brevoSend({
     sender: SENDER(),
     to: [{ email: toEmail, name: toName }],
-    subject: `Your ${loanLabel} application is still waiting`,
+    subject: `Good news, ${toName} — your profile looks eligible for a ${loanLabel} ✓`,
     htmlContent: brandedHtml({
-      preheader: `You started a ${loanLabel} application on Biddaro. Pick up where you left off.`,
-      bodyTitle: `Your ${loanLabel} Application Is Waiting`,
+      preheader: `Based on what you shared, you appear eligible. Complete your application to confirm.`,
+      bodyTitle: `Your Profile Looks Eligible`,
       bodyLines: [
         `Hi ${toName},`,
-        `Yesterday you started applying for a <strong>${loanLabel}</strong> on Biddaro but didn't complete the payment step. Your details are still saved — you can finish in under 2 minutes.`,
-        `<div style="background:#fff7ed;border-left:4px solid #ea580c;padding:12px 16px;border-radius:6px;margin:8px 0;">
-           <p style="margin:0;font-size:13px;color:#92400e;font-weight:600;">Your selected loan:</p>
-           <p style="margin:4px 0 0;font-size:16px;color:#111827;font-weight:700;">🏦 ${loanLabel}</p>
+        `We've reviewed the details you submitted and your profile looks eligible for a <strong>${loanLabel}</strong> through Biddaro's lending network.`,
+        `<div style="background:#eff6ff;border-left:4px solid #2563eb;padding:12px 16px;border-radius:6px;margin:8px 0;">
+           <p style="margin:0;font-size:13px;color:#1e40af;font-weight:600;">Eligibility check: <span style="color:#16a34a;">Passed ✓</span></p>
+           <p style="margin:4px 0 0;font-size:13px;color:#1e3a8a;">Next step: Complete your application to get a confirmed offer from our lenders.</p>
          </div>`,
-        `Over <strong>10,000 contractors and builders</strong> across India have used Biddaro to get their ${loanLabel.toLowerCase()} approved — many within 48 hours of applying.`,
-        `<strong>What happens after you complete:</strong><br/>
-         ✅ Our team reviews your application within 24 hours<br/>
-         ✅ We match you with the best lender for your ${loanLabel.toLowerCase()}<br/>
-         ✅ Get funds disbursed directly to your account`,
+        `<strong>What happens next:</strong><br/>
+         ✅ Submit your application (2 minutes)<br/>
+         ✅ Our team reviews within 24 hours<br/>
+         ✅ Get matched with the best lender for your needs<br/>
+         ✅ Funds disbursed directly to your account`,
+        `Over <strong>10,000 contractors</strong> across India have used Biddaro to get their loans approved quickly.`,
       ],
       ctaLink:    applyUrl,
-      ctaLabel:   `Complete My ${loanLabel} Application →`,
+      ctaLabel:   'Confirm My Eligibility →',
       footerNote: loanFollowupFooter(unsubUrl),
     }),
   });
 }
 
-/** Stage 3 — 3 days after stage 2: benefit-focused */
+/** Stage 3 — 24h after capture: pre-approval check started */
 export async function sendLoanFollowupStage3(opts: LoanFollowupOpts): Promise<void> {
   const { toEmail, toName, loanType, applyUrl, unsubUrl } = opts;
   const loanLabel = loanTypeLabel(loanType);
   await brevoSend({
     sender: SENDER(),
     to: [{ email: toEmail, name: toName }],
-    subject: `Get the funds your project needs — apply for a ${loanLabel} today`,
+    subject: `Pre-approval check started for your ${loanLabel} — action needed`,
     htmlContent: brandedHtml({
-      preheader: `Competitive rates, fast approval, and a dedicated loan advisor — all in one place.`,
-      bodyTitle: `Don't Let Funding Hold Your Project Back`,
+      preheader: `Our team started processing your pre-approval. Complete the final step to proceed.`,
+      bodyTitle: `Your Pre-Approval Check Has Started`,
       bodyLines: [
         `Hi ${toName},`,
-        `We know construction projects can stall when funds don't arrive on time. Biddaro's ${loanLabel.toLowerCase()} is designed to move fast so your project doesn't stop.`,
-        `<strong>Why contractors choose Biddaro:</strong><br/>
-         🏦 Competitive rates from top lenders<br/>
-         ⚡ Fast approval — decisions within 48 hours<br/>
-         🤝 Dedicated loan advisor throughout the process<br/>
-         📋 Minimal paperwork, fully online`,
-        `Your application is still open. Complete it today and our team will take it from there.`,
+        `Our loan advisors have started a pre-approval check for your <strong>${loanLabel}</strong> based on the details you submitted.`,
+        `<div style="background:#fefce8;border-left:4px solid #ca8a04;padding:12px 16px;border-radius:6px;margin:8px 0;">
+           <p style="margin:0;font-size:13px;color:#854d0e;font-weight:600;">⏳ Action required to complete pre-approval</p>
+           <p style="margin:6px 0 0;font-size:13px;color:#713f12;">Your application is on hold until you complete the final step. This takes less than 2 minutes.</p>
+         </div>`,
+        `<strong>Why complete now?</strong><br/>
+         🏦 Get matched with lenders offering the lowest rates<br/>
+         ⚡ Decisions within 48 hours of submission<br/>
+         🤝 A dedicated advisor handles your paperwork<br/>
+         📋 No documents needed upfront`,
+        `Don't let your pre-approval expire — complete your application now.`,
       ],
       ctaLink:    applyUrl,
-      ctaLabel:   'Apply Now — Takes 2 Minutes →',
+      ctaLabel:   'Complete Pre-Approval →',
       footerNote: loanFollowupFooter(unsubUrl),
     }),
   });
 }
 
-/** Stage 4 — 7 days after stage 3: urgency / final nudge */
+/** Stage 4 — 2 days after capture: "pre-approved" high CTR hook */
 export async function sendLoanFollowupStage4(opts: LoanFollowupOpts): Promise<void> {
-  const { toEmail, toName, loanType, applyUrl, unsubUrl } = opts;
+  const { toEmail, toName, loanType, amount, applyUrl, unsubUrl } = opts;
   const loanLabel = loanTypeLabel(loanType);
+  const amountStr = fmtAmount(amount);
   await brevoSend({
     sender: SENDER(),
     to: [{ email: toEmail, name: toName }],
-    subject: `Final reminder — your ${loanLabel} offer is still available`,
+    subject: `✅ Your ${loanLabel} has been pre-approved — claim it now`,
     htmlContent: brandedHtml({
-      preheader: `This is our last follow-up. Your application is waiting — complete it before we close the slot.`,
-      bodyTitle: `Last Chance — Complete Your Application`,
+      preheader: `${toName}, you've been pre-approved! Complete the last step to receive your loan offer.`,
+      bodyTitle: `🎉 Congratulations — You're Pre-Approved!`,
       bodyLines: [
         `Hi ${toName},`,
-        `This is our final reminder about your <strong>${loanLabel}</strong> application. We don't want you to miss out on funding for your project.`,
-        `Our loan advisors have limited capacity each week — if you don't complete your application soon, we may not be able to hold your slot.`,
-        `It takes less than 2 minutes to finish. Click below and our team will get your application in front of the right lenders immediately.`,
+        `Based on your profile and the details you submitted, you have been <strong>pre-approved</strong> for a ${loanLabel} on Biddaro's lending network.`,
+        `<div style="background:#f0fdf4;border:2px solid #16a34a;padding:16px;border-radius:8px;margin:8px 0;text-align:center;">
+           <p style="margin:0;font-size:13px;color:#166534;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Pre-Approved Loan</p>
+           <p style="margin:8px 0 4px;font-size:22px;color:#111827;font-weight:700;">🏦 ${loanLabel}${amountStr ? ` — ${amountStr}` : ''}</p>
+           <p style="margin:0;font-size:12px;color:#166534;">Reserved for ${toName} · Offer valid for 48 hours</p>
+         </div>`,
+        `<strong>To receive your loan offer:</strong><br/>
+         1️⃣ Click the button below<br/>
+         2️⃣ Complete the final payment step (takes 2 minutes)<br/>
+         3️⃣ Our advisor contacts you within 24 hours with lender offers`,
+        `<strong>⚠️ This pre-approved offer is reserved for you for 48 hours.</strong> After that, the slot may be given to another applicant.`,
       ],
       ctaLink:    applyUrl,
-      ctaLabel:   'Complete My Application Now →',
+      ctaLabel:   'Claim My Pre-Approved Loan →',
+      footerNote: loanFollowupFooter(unsubUrl),
+    }),
+  });
+}
+
+/** Stage 5 — 4 days after capture: personalized amount, urgency rising */
+export async function sendLoanFollowupStage5(opts: LoanFollowupOpts): Promise<void> {
+  const { toEmail, toName, loanType, amount, applyUrl, unsubUrl } = opts;
+  const loanLabel = loanTypeLabel(loanType);
+  const amountStr = fmtAmount(amount);
+  const headline = amountStr
+    ? `Your pre-approved ${amountStr} ${loanLabel} is still waiting`
+    : `Your pre-approved ${loanLabel} is still waiting for you`;
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: toEmail, name: toName }],
+    subject: amountStr
+      ? `${toName}, your pre-approved ${amountStr} loan is waiting — don't lose it`
+      : `${toName}, your pre-approved loan amount is waiting — claim it now`,
+    htmlContent: brandedHtml({
+      preheader: `You were pre-approved 2 days ago. Complete the last step before your offer expires.`,
+      bodyTitle: headline,
+      bodyLines: [
+        `Hi ${toName},`,
+        `Two days ago you were pre-approved for a <strong>${loanLabel}</strong>${amountStr ? ` of <strong>${amountStr}</strong>` : ''} on Biddaro — but the final step is still pending.`,
+        `<div style="background:#fff7ed;border:2px solid #ea580c;padding:16px;border-radius:8px;margin:8px 0;">
+           <p style="margin:0;font-size:13px;color:#9a3412;font-weight:700;">⚠️ Your offer is expiring soon</p>
+           ${amountStr ? `<p style="margin:8px 0 4px;font-size:20px;color:#111827;font-weight:700;">${amountStr} ${loanLabel}</p>` : ''}
+           <p style="margin:0;font-size:13px;color:#9a3412;">Complete the last step now to secure this offer before it expires.</p>
+         </div>`,
+        `<strong>Completing your application takes under 2 minutes.</strong> Our advisors are standing by to connect you with lenders as soon as you finish.`,
+        `Don't let this offer slip away — hundreds of contractors across India are getting their loans approved on Biddaro every week.`,
+      ],
+      ctaLink:    applyUrl,
+      ctaLabel:   'Secure My Loan Now →',
+      footerNote: loanFollowupFooter(unsubUrl),
+    }),
+  });
+}
+
+/** Stage 6 — 6 days after capture: urgent 48h countdown */
+export async function sendLoanFollowupStage6(opts: LoanFollowupOpts): Promise<void> {
+  const { toEmail, toName, loanType, amount, applyUrl, unsubUrl } = opts;
+  const loanLabel = loanTypeLabel(loanType);
+  const amountStr = fmtAmount(amount);
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: toEmail, name: toName }],
+    subject: `⏰ URGENT: Your pre-approved ${loanLabel} expires in 48 hours`,
+    htmlContent: brandedHtml({
+      preheader: `${toName}, your pre-approved loan offer closes in 48 hours. Act now before it's too late.`,
+      bodyTitle: `⏰ 48 Hours Left — Your Offer Expires Soon`,
+      bodyLines: [
+        `Hi ${toName},`,
+        `Your pre-approved <strong>${loanLabel}</strong>${amountStr ? ` of <strong>${amountStr}</strong>` : ''} on Biddaro expires in <strong>48 hours</strong>.`,
+        `<div style="background:#fef2f2;border:2px solid #dc2626;padding:16px;border-radius:8px;margin:8px 0;text-align:center;">
+           <p style="margin:0;font-size:28px;font-weight:700;color:#dc2626;">48:00:00</p>
+           <p style="margin:4px 0 0;font-size:13px;color:#991b1b;font-weight:600;">Hours remaining on your pre-approved offer</p>
+           ${amountStr ? `<p style="margin:8px 0 0;font-size:16px;color:#111827;font-weight:700;">${amountStr} ${loanLabel}</p>` : ''}
+         </div>`,
+        `After this deadline, your pre-approved slot will be released and we cannot guarantee this offer will be available again.`,
+        `<strong>This is the fastest path to your loan:</strong><br/>
+         ✅ Complete the last step (2 minutes)<br/>
+         ✅ Advisor calls you within 24 hours<br/>
+         ✅ Funds in your account within days`,
+      ],
+      ctaLink:    applyUrl,
+      ctaLabel:   'Complete Now Before Offer Expires →',
+      footerNote: loanFollowupFooter(unsubUrl),
+    }),
+  });
+}
+
+/** Stage 7 — 7 days after capture: final last-chance email */
+export async function sendLoanFollowupStage7(opts: LoanFollowupOpts): Promise<void> {
+  const { toEmail, toName, loanType, amount, applyUrl, unsubUrl } = opts;
+  const loanLabel = loanTypeLabel(loanType);
+  const amountStr = fmtAmount(amount);
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: toEmail, name: toName }],
+    subject: `🔴 Last chance: Your ${loanLabel} offer closes tonight`,
+    htmlContent: brandedHtml({
+      preheader: `This is our final message. Your pre-approved loan offer expires today — complete it now or lose it.`,
+      bodyTitle: `🔴 Final Notice — Offer Closes Today`,
+      bodyLines: [
+        `Hi ${toName},`,
+        `This is our last message regarding your pre-approved <strong>${loanLabel}</strong>${amountStr ? ` of <strong>${amountStr}</strong>` : ''}.`,
+        `<div style="background:#1f2937;padding:20px;border-radius:8px;margin:8px 0;text-align:center;">
+           <p style="margin:0;font-size:13px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;">Pre-Approved Offer for ${toName}</p>
+           ${amountStr ? `<p style="margin:8px 0 4px;font-size:24px;color:#ffffff;font-weight:700;">${amountStr}</p>` : ''}
+           <p style="margin:4px 0 0;font-size:14px;color:#f97316;font-weight:600;">${loanLabel} · Expires Tonight</p>
+         </div>`,
+        `After today, we will close your application and release the slot to other applicants. We will not be able to reinstate this offer.`,
+        `If you've been meaning to complete this — <strong>now is the moment.</strong> It takes 2 minutes and our advisors will take care of everything else.`,
+      ],
+      ctaLink:    applyUrl,
+      ctaLabel:   'Complete My Application — Last Chance →',
       footerNote: loanFollowupFooter(unsubUrl),
     }),
   });
