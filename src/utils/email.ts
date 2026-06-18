@@ -698,7 +698,7 @@ export async function sendLoanFollowupStage1(opts: LoanFollowupOpts): Promise<vo
   });
 }
 
-/** Stage 2 — 24 hours after stage 1: social proof */
+/** Stage 2 — 24 hours after stage 1: social proof with prominent loan type callout */
 export async function sendLoanFollowupStage2(opts: LoanFollowupOpts): Promise<void> {
   const { toEmail, toName, loanType, applyUrl, unsubUrl } = opts;
   const loanLabel = loanTypeLabel(loanType);
@@ -707,19 +707,23 @@ export async function sendLoanFollowupStage2(opts: LoanFollowupOpts): Promise<vo
     to: [{ email: toEmail, name: toName }],
     subject: `Your ${loanLabel} application is still waiting`,
     htmlContent: brandedHtml({
-      preheader: `10,000+ contractors have already used Biddaro to get their construction loans approved.`,
-      bodyTitle: `Your Loan Application Is Waiting`,
+      preheader: `You started a ${loanLabel} application on Biddaro. Pick up where you left off.`,
+      bodyTitle: `Your ${loanLabel} Application Is Waiting`,
       bodyLines: [
         `Hi ${toName},`,
+        `Yesterday you started applying for a <strong>${loanLabel}</strong> on Biddaro but didn't complete the payment step. Your details are still saved — you can finish in under 2 minutes.`,
+        `<div style="background:#fff7ed;border-left:4px solid #ea580c;padding:12px 16px;border-radius:6px;margin:8px 0;">
+           <p style="margin:0;font-size:13px;color:#92400e;font-weight:600;">Your selected loan:</p>
+           <p style="margin:4px 0 0;font-size:16px;color:#111827;font-weight:700;">🏦 ${loanLabel}</p>
+         </div>`,
         `Over <strong>10,000 contractors and builders</strong> across India have used Biddaro to get their ${loanLabel.toLowerCase()} approved — many within 48 hours of applying.`,
-        `Your application is still incomplete. Pick up where you left off — it takes under 2 minutes to finish.`,
-        `<strong>What happens after you apply:</strong><br/>
+        `<strong>What happens after you complete:</strong><br/>
          ✅ Our team reviews your application within 24 hours<br/>
-         ✅ We match you with the best lender for your profile<br/>
+         ✅ We match you with the best lender for your ${loanLabel.toLowerCase()}<br/>
          ✅ Get funds disbursed directly to your account`,
       ],
       ctaLink:    applyUrl,
-      ctaLabel:   'Finish My Application →',
+      ctaLabel:   `Complete My ${loanLabel} Application →`,
       footerNote: loanFollowupFooter(unsubUrl),
     }),
   });
