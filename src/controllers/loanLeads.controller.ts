@@ -7,7 +7,16 @@ import {
   sendLoanFollowupStage3,
   sendLoanFollowupStage4,
 } from '../utils/email';
+import { sendPushToUser } from '../utils/push';
 import type { AuthenticatedRequest } from '../types';
+
+const STAGE_PUSH_BODIES = [
+  '',
+  "You're one step away — complete your application",
+  'Your loan application is still waiting for you',
+  'Get the funds you need — apply for your loan today',
+  'Final reminder: your loan offer is still available',
+];
 
 // ─── Thresholds for each reminder stage (in ms) ───────────────────────────────
 const STAGE_DELAYS_MS = [
@@ -123,6 +132,17 @@ export async function processLoanReminders(req: AuthenticatedRequest, res: Respo
           lastReminderAt: now,
         },
       });
+
+      // Also push-notify if lead has a platform account
+      const user = await prisma.user.findFirst({ where: { email: lead.email } });
+      if (user) {
+        const webUrl = process.env.WEB_URL || process.env.FRONTEND_URL || 'https://www.biddaro.com';
+        sendPushToUser(user.id, {
+          title: 'Complete Your Loan Application',
+          body:  STAGE_PUSH_BODIES[stageNum],
+          url:   `${webUrl}/loan-apply`,
+        }).catch(() => {});
+      }
 
       sent++;
     } catch {

@@ -4,7 +4,7 @@ import { validate } from '../middleware/validate';
 import { authenticate } from '../middleware/auth';
 import {
   register, login, refreshToken, logout, getMe, changePassword,
-  sendOtp, verifyOtp, forgotPassword, resetPassword,
+  sendOtp, verifyOtp, forgotPassword, resetPassword, phoneVerify,
 } from '../controllers/auth.controller';
 
 const router = Router();
@@ -45,6 +45,7 @@ router.post('/reset-password', validate([
   body('newPassword').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
 ]), resetPassword);
 
+router.post('/phone-verify', phoneVerify);
 router.post('/logout', authenticate, logout);
 router.get('/me', authenticate, getMe);
 

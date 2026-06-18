@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../config/database';
 import { sendSuccess } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
-import { saveSubscription, removeSubscription, vapidPublicKey } from '../utils/push';
+import { saveSubscription, removeSubscription, vapidPublicKey, saveFcmToken } from '../utils/push';
 import type { AuthenticatedRequest } from '../types';
 
 export async function getNotifications(req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -69,4 +69,16 @@ export async function unsubscribePush(req: AuthenticatedRequest, res: Response):
   const { endpoint } = req.body;
   if (endpoint) removeSubscription(userId, endpoint);
   sendSuccess(res, null, 'Push subscription removed');
+}
+
+/** Save an FCM device token for this user (web or mobile) */
+export async function registerFcmToken(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const userId = req.user!.userId;
+  const { token, platform } = req.body;
+  if (!token) {
+    res.status(400).json({ success: false, message: 'token is required' });
+    return;
+  }
+  await saveFcmToken(userId, token, platform || 'web');
+  sendSuccess(res, null, 'FCM token registered');
 }

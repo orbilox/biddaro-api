@@ -1,12 +1,12 @@
 /**
- * Web Push Notifications Utility
- * VAPID keys are stored in environment variables.
- * Subscriptions are persisted in the User.pushSubs column (JSON array)
- * so they survive server restarts / Railway redeploys.
+ * Push Notifications Utility
+ * Supports both VAPID (web) and FCM (web + Android/iOS).
+ * Subscriptions/tokens are persisted in User.pushSubs and User.fcmTokens.
  */
 
 import webpush from 'web-push';
 import { prisma } from '../config/database';
+import { getMessaging } from './firebase';
 
 // ─── VAPID setup ─────────────────────────────────────────────────────────────
 
@@ -65,43 +65,118 @@ export async function removeSubscription(userId: string, endpoint: string) {
   });
 }
 
+// ─── FCM token helpers ────────────────────────────────────────────────────────
+
+interface FcmToken { token: string; platform: 'web' | 'android' | 'ios' }
+
+function parseFcmTokens(raw: string | null | undefined): FcmToken[] {
+  if (!raw) return [];
+  try { return JSON.parse(raw) as FcmToken[]; } catch { return []; }
+}
+
+export async function saveFcmToken(userId: string, token: string, platform: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { fcmTokens: true } });
+  const existing = parseFcmTokens(user?.fcmTokens);
+  const deduped = existing.filter(t => t.token !== token);
+  deduped.push({ token, platform: platform as FcmToken['platform'] });
+  await prisma.user.update({
+    where: { id: userId },
+    data:  { fcmTokens: JSON.stringify(deduped) },
+  });
+}
+
+export async function removeFcmToken(userId: string, token: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { fcmTokens: true } });
+  const filtered = parseFcmTokens(user?.fcmTokens).filter(t => t.token !== token);
+  await prisma.user.update({
+    where: { id: userId },
+    data:  { fcmTokens: JSON.stringify(filtered) },
+  });
+}
+
 // ─── Send push to a user ──────────────────────────────────────────────────────
 
 export async function sendPushToUser(
   userId: string,
   payload: { title: string; body: string; icon?: string; url?: string },
 ) {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { pushSubs: true } });
-  const subs = parseSubs(user?.pushSubs);
-  if (subs.length === 0) return;
-
-  const json = JSON.stringify({
-    title: payload.title,
-    body:  payload.body,
-    icon:  payload.icon || '/favicon.png',
-    url:   payload.url  || '/',
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { pushSubs: true, fcmTokens: true },
   });
 
-  const expired: string[] = [];
+  // ── VAPID (existing web push) ─────────────────────────────────────────────
+  const subs = parseSubs(user?.pushSubs);
+  if (subs.length > 0) {
+    const json = JSON.stringify({
+      title: payload.title,
+      body:  payload.body,
+      icon:  payload.icon || '/favicon.png',
+      url:   payload.url  || '/',
+    });
 
-  await Promise.allSettled(
-    subs.map(async (sub) => {
-      try {
-        await webpush.sendNotification(sub, json);
-      } catch (err: any) {
-        if (err.statusCode === 410 || err.statusCode === 404) {
-          expired.push(sub.endpoint);
+    const expired: string[] = [];
+    await Promise.allSettled(
+      subs.map(async (sub) => {
+        try {
+          await webpush.sendNotification(sub, json);
+        } catch (err: any) {
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            expired.push(sub.endpoint);
+          }
+        }
+      }),
+    );
+
+    if (expired.length > 0) {
+      const fresh = subs.filter(s => !expired.includes(s.endpoint));
+      await prisma.user.update({
+        where: { id: userId },
+        data:  { pushSubs: JSON.stringify(fresh) },
+      });
+    }
+  }
+
+  // ── FCM (web + mobile) ────────────────────────────────────────────────────
+  const fcmTokens = parseFcmTokens(user?.fcmTokens);
+  if (fcmTokens.length === 0) return;
+
+  // Skip FCM if Firebase env vars not configured
+  if (!process.env.FIREBASE_PROJECT_ID) return;
+
+  try {
+    const messaging = getMessaging();
+    const result = await messaging.sendEachForMulticast({
+      tokens: fcmTokens.map(t => t.token),
+      notification: { title: payload.title, body: payload.body },
+      webpush: payload.url
+        ? { fcmOptions: { link: payload.url } }
+        : undefined,
+      data: { url: payload.url || '/' },
+    });
+
+    // Remove stale tokens
+    const invalidTokens: string[] = [];
+    result.responses.forEach((resp: { success: boolean; error?: { code?: string } }, idx: number) => {
+      if (!resp.success) {
+        const code = resp.error?.code;
+        if (
+          code === 'messaging/invalid-registration-token' ||
+          code === 'messaging/registration-token-not-registered'
+        ) {
+          invalidTokens.push(fcmTokens[idx].token);
         }
       }
-    }),
-  );
-
-  // Clean up expired endpoints in DB
-  if (expired.length > 0) {
-    const fresh = subs.filter(s => !expired.includes(s.endpoint));
-    await prisma.user.update({
-      where: { id: userId },
-      data:  { pushSubs: JSON.stringify(fresh) },
     });
+
+    if (invalidTokens.length > 0) {
+      const fresh = fcmTokens.filter(t => !invalidTokens.includes(t.token));
+      await prisma.user.update({
+        where: { id: userId },
+        data:  { fcmTokens: JSON.stringify(fresh) },
+      });
+    }
+  } catch {
+    // FCM failure is non-critical — VAPID already fired
   }
 }

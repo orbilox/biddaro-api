@@ -7,6 +7,7 @@ import { sendSuccess, sendCreated, sendError, sendUnauthorized } from '../utils/
 import { generateOtp } from '../utils/otp';
 import { sendOtpEmail, sendPasswordResetEmail } from '../utils/email';
 import { capiCompleteRegistration } from '../utils/metaCapi';
+import { getFirebaseAuth } from '../utils/firebase';
 import type { AuthenticatedRequest } from '../types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -420,4 +421,66 @@ export async function resetPassword(req: Request, res: Response): Promise<void> 
   });
 
   sendSuccess(res, null, 'Password reset successfully. Please log in with your new password.');
+}
+
+// ─── Phone OTP login (Firebase Auth) ─────────────────────────────────────────
+
+export async function phoneVerify(req: Request, res: Response): Promise<void> {
+  const { idToken } = req.body;
+  if (!idToken) {
+    sendError(res, 'idToken is required', 400);
+    return;
+  }
+
+  let phone: string | undefined;
+  try {
+    const decoded = await getFirebaseAuth().verifyIdToken(idToken);
+    phone = decoded.phone_number;
+  } catch {
+    sendError(res, 'Invalid or expired Firebase token', 401);
+    return;
+  }
+
+  if (!phone) {
+    sendError(res, 'No phone number in token', 400);
+    return;
+  }
+
+  // Find or create user by phone number
+  let user = await prisma.user.findFirst({ where: { phone } });
+  if (!user) {
+    const referralCode = await (async () => {
+      for (let i = 0; i < 10; i++) {
+        const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+        const exists = await prisma.user.findUnique({ where: { referralCode: code } });
+        if (!exists) return code;
+      }
+      return Math.random().toString(36).substring(2, 6).toUpperCase() + Date.now().toString(36).slice(-4).toUpperCase();
+    })();
+
+    user = await prisma.user.create({
+      data: {
+        // Phone-only accounts use phone as a stand-in; email can be added later
+        email:        `phone_${phone.replace(/\+/g, '')}@placeholder.biddaro.com`,
+        passwordHash: '',
+        firstName:    '',
+        lastName:     '',
+        phone,
+        role:         'job_poster',
+        isVerified:   true,
+        referralCode,
+      },
+    });
+
+    // Create wallet
+    await prisma.wallet.create({ data: { userId: user.id, currency: 'INR' } });
+  }
+
+  const jwtPayload = { userId: user.id, email: user.email, role: user.role };
+  const accessToken  = signAccessToken(jwtPayload);
+  const refreshToken = signRefreshToken(jwtPayload);
+
+  await prisma.user.update({ where: { id: user.id }, data: { refreshToken } });
+
+  sendSuccess(res, { accessToken, refreshToken, user: safeUser(user as Record<string, unknown>) });
 }
