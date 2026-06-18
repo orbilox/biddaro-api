@@ -145,7 +145,7 @@ export async function sendPushToUser(
   if (!process.env.FIREBASE_PROJECT_ID) return;
 
   try {
-    const messaging = getMessaging();
+    const messaging = await getMessaging();
     const result = await messaging.sendEachForMulticast({
       tokens: fcmTokens.map(t => t.token),
       notification: { title: payload.title, body: payload.body },

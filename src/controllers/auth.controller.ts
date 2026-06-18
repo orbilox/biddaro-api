@@ -434,7 +434,8 @@ export async function phoneVerify(req: Request, res: Response): Promise<void> {
 
   let phone: string | undefined;
   try {
-    const decoded = await getFirebaseAuth().verifyIdToken(idToken);
+    const auth = await getFirebaseAuth();
+    const decoded = await auth.verifyIdToken(idToken);
     phone = decoded.phone_number;
   } catch {
     sendError(res, 'Invalid or expired Firebase token', 401);

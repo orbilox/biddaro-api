@@ -1,11 +1,13 @@
-import { initializeApp, getApps, cert, type App } from 'firebase-admin/app';
-import { getMessaging as _getMessaging } from 'firebase-admin/messaging';
-import { getAuth as _getAuth } from 'firebase-admin/auth';
+// firebase-admin/auth uses jwks-rsa → jose (ESM-only), which crashes CJS require() at startup.
+// Fix: lazy dynamic imports so the modules only load on first actual use, not at module load time.
+
+import type { App } from 'firebase-admin/app';
 
 let app: App | undefined;
 
-function getFirebaseApp(): App {
+async function getFirebaseApp(): Promise<App> {
   if (!app) {
+    const { initializeApp, getApps, cert } = await import('firebase-admin/app');
     app = getApps().length
       ? getApps()[0]!
       : initializeApp({
@@ -19,10 +21,12 @@ function getFirebaseApp(): App {
   return app!;
 }
 
-export function getMessaging() {
-  return _getMessaging(getFirebaseApp());
+export async function getMessaging() {
+  const { getMessaging: _get } = await import('firebase-admin/messaging');
+  return _get(await getFirebaseApp());
 }
 
-export function getFirebaseAuth() {
-  return _getAuth(getFirebaseApp());
+export async function getFirebaseAuth() {
+  const { getAuth: _get } = await import('firebase-admin/auth');
+  return _get(await getFirebaseApp());
 }
