@@ -91,6 +91,7 @@ model User {
   inspectWebhooks        InspectWebhook[]
   inspectSchedules         InspectSchedule[]
   inspectReportVersions    InspectReportVersion[]
+  pushLogs                 PushLog[]
 }
 
 model Job {
@@ -1381,4 +1382,21 @@ model InspectProjectMember {
   @@unique([projectId, email])
   @@index([projectId])
   @@index([userId])
+}
+
+model PushLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  title       String
+  body        String?
+  fcmSent     Int      @default(0)
+  vapidSent   Int      @default(0)
+  fcmFailed   Int      @default(0)
+  vapidFailed Int      @default(0)
+  sentAt      DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([sentAt])
 }

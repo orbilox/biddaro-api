@@ -107,6 +107,9 @@ export async function sendPushToUser(
 
   // ── VAPID (existing web push) ─────────────────────────────────────────────
   const subs = parseSubs(user?.pushSubs);
+  let vapidSent = 0;
+  let vapidFailed = 0;
+
   if (subs.length > 0) {
     const json = JSON.stringify({
       title: payload.title,
@@ -120,7 +123,9 @@ export async function sendPushToUser(
       subs.map(async (sub) => {
         try {
           await webpush.sendNotification(sub, json);
+          vapidSent++;
         } catch (err: any) {
+          vapidFailed++;
           if (err.statusCode === 410 || err.statusCode === 404) {
             expired.push(sub.endpoint);
           }
@@ -139,44 +144,61 @@ export async function sendPushToUser(
 
   // ── FCM (web + mobile) ────────────────────────────────────────────────────
   const fcmTokens = parseFcmTokens(user?.fcmTokens);
-  if (fcmTokens.length === 0) return;
+  let fcmSent = 0;
+  let fcmFailed = 0;
 
-  // Skip FCM if Firebase env vars not configured
-  if (!process.env.FIREBASE_PROJECT_ID) return;
-
-  try {
-    const messaging = await getMessaging();
-    const result = await messaging.sendEachForMulticast({
-      tokens: fcmTokens.map(t => t.token),
-      notification: { title: payload.title, body: payload.body },
-      webpush: payload.url
-        ? { fcmOptions: { link: payload.url } }
-        : undefined,
-      data: { url: payload.url || '/' },
-    });
-
-    // Remove stale tokens
-    const invalidTokens: string[] = [];
-    result.responses.forEach((resp: { success: boolean; error?: { code?: string } }, idx: number) => {
-      if (!resp.success) {
-        const code = resp.error?.code;
-        if (
-          code === 'messaging/invalid-registration-token' ||
-          code === 'messaging/registration-token-not-registered'
-        ) {
-          invalidTokens.push(fcmTokens[idx].token);
-        }
-      }
-    });
-
-    if (invalidTokens.length > 0) {
-      const fresh = fcmTokens.filter(t => !invalidTokens.includes(t.token));
-      await prisma.user.update({
-        where: { id: userId },
-        data:  { fcmTokens: JSON.stringify(fresh) },
+  if (fcmTokens.length > 0 && process.env.FIREBASE_PROJECT_ID) {
+    try {
+      const messaging = await getMessaging();
+      const result = await messaging.sendEachForMulticast({
+        tokens: fcmTokens.map(t => t.token),
+        notification: { title: payload.title, body: payload.body },
+        webpush: payload.url
+          ? { fcmOptions: { link: payload.url } }
+          : undefined,
+        data: { url: payload.url || '/' },
       });
+
+      const invalidTokens: string[] = [];
+      result.responses.forEach((resp: { success: boolean; error?: { code?: string } }, idx: number) => {
+        if (resp.success) {
+          fcmSent++;
+        } else {
+          fcmFailed++;
+          const code = resp.error?.code;
+          if (
+            code === 'messaging/invalid-registration-token' ||
+            code === 'messaging/registration-token-not-registered'
+          ) {
+            invalidTokens.push(fcmTokens[idx].token);
+          }
+        }
+      });
+
+      if (invalidTokens.length > 0) {
+        const fresh = fcmTokens.filter(t => !invalidTokens.includes(t.token));
+        await prisma.user.update({
+          where: { id: userId },
+          data:  { fcmTokens: JSON.stringify(fresh) },
+        });
+      }
+    } catch {
+      // FCM failure is non-critical — VAPID already fired
     }
-  } catch {
-    // FCM failure is non-critical — VAPID already fired
+  }
+
+  // ── Log the send ─────────────────────────────────────────────────────────
+  if (vapidSent + fcmSent + vapidFailed + fcmFailed > 0) {
+    prisma.pushLog.create({
+      data: {
+        userId,
+        title:       payload.title,
+        body:        payload.body,
+        fcmSent,
+        vapidSent,
+        fcmFailed,
+        vapidFailed,
+      },
+    }).catch(() => {});
   }
 }

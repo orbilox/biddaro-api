@@ -28,6 +28,7 @@ import {
   adminPremiumRevenue,
 } from '../controllers/premium.controller';
 import { adminListLoanLeads } from '../controllers/loanLeads.controller';
+import { adminPushStats } from '../controllers/pushStats.controller';
 
 const router = Router();
 
@@ -72,6 +73,9 @@ router.post('/broadcast', broadcastNotification);
 
 // ── Loan Leads ───────────────────────────────────────────────────────────────
 router.get('/loan-leads', adminListLoanLeads);
+
+// ── Push Notifications ───────────────────────────────────────────────────────
+router.get('/push-stats', adminPushStats);
 
 // ── Premium Management ────────────────────────────────────────────────────────
 router.get('/premium/stats', adminPremiumStats);
