@@ -13,7 +13,7 @@ if (config.isDev) globalForPrisma.prisma = prisma;
 
 export async function connectDB(): Promise<void> {
   await prisma.$connect();
-  console.log('✅ Database connected (SQLite)');
+  console.log('✅ Database connected');
 }
 
 export async function disconnectDB(): Promise<void> {
