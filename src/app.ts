@@ -58,7 +58,12 @@ const limiter = rateLimit({
   max: config.rateLimit.maxRequests,             // default 100  (override via RATE_LIMIT_MAX)
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => config.isDev,                      // ← bypass entirely in dev
+  // Skip in dev, and skip safe GET reads — this limiter keys by IP, and mobile
+  // carrier CGNAT (very common in India) puts thousands of real users behind
+  // one IP. A low IP-based limit on read-only browsing (job board, listings,
+  // admin dashboards) caused real users sharing an IP to silently lose data.
+  // Mutating requests (POST/PUT/PATCH/DELETE) stay limited to block abuse.
+  skip: (req) => config.isDev || req.method === 'GET',
   message: { success: false, message: 'Too many requests, please try again later.' },
 });
 app.use('/api/', limiter);
