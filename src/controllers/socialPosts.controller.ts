@@ -183,14 +183,49 @@ export async function adminListSocialPosts(req: AuthenticatedRequest, res: Respo
   return sendSuccess(res, { posts, total, page, limit });
 }
 
-// ─── Admin: update status (mark used / archived / draft) ──────────────────────
+// ─── Admin: create a single slot on a date (custom note/topic) ────────────────
+export async function adminCreateSocialPost(req: AuthenticatedRequest, res: Response) {
+  const { scheduledFor, topic, caption } = req.body as {
+    scheduledFor?: string; topic?: string; caption?: string;
+  };
+  if (!topic || !String(topic).trim()) {
+    return sendError(res, 'A note/topic is required', 400);
+  }
+  const post = await prisma.socialPost.create({
+    data: {
+      topic:        String(topic).trim(),
+      caption:      caption ? String(caption) : '',
+      status:       caption ? 'draft' : 'planned',
+      source:       'manual',
+      scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
+    },
+  });
+  return sendSuccess(res, { post }, 'Created');
+}
+
+// ─── Admin: update a post (status and/or editable content) ────────────────────
 export async function adminUpdateSocialPost(req: AuthenticatedRequest, res: Response) {
   const { id } = req.params;
-  const { status } = req.body as { status?: string };
-  if (!status || !['draft', 'used', 'archived'].includes(status)) {
-    return sendError(res, 'status must be draft, used, or archived', 400);
+  const { status, topic, caption, hashtags } = req.body as {
+    status?: string; topic?: string; caption?: string; hashtags?: string;
+  };
+
+  const data: Record<string, unknown> = {};
+  if (status !== undefined) {
+    if (!['planned', 'draft', 'used', 'archived'].includes(status)) {
+      return sendError(res, 'Invalid status', 400);
+    }
+    data.status = status;
   }
-  const post = await prisma.socialPost.update({ where: { id }, data: { status } });
+  if (topic    !== undefined) data.topic    = String(topic);
+  if (caption  !== undefined) data.caption  = String(caption);
+  if (hashtags !== undefined) data.hashtags = hashtags === '' ? null : String(hashtags);
+
+  if (Object.keys(data).length === 0) {
+    return sendError(res, 'Nothing to update', 400);
+  }
+
+  const post = await prisma.socialPost.update({ where: { id }, data });
   return sendSuccess(res, { post }, 'Updated');
 }
 

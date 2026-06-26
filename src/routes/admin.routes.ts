@@ -36,6 +36,7 @@ import {
   adminDeleteSocialPost,
   adminPlanMonth,
   adminGenerateSlot,
+  adminCreateSocialPost,
 } from '../controllers/socialPosts.controller';
 
 const router = Router();
@@ -87,6 +88,7 @@ router.get('/push-stats', adminPushStats);
 
 // ── Social Posts ─────────────────────────────────────────────────────────────
 router.get('/social-posts', adminListSocialPosts);
+router.post('/social-posts', adminCreateSocialPost);
 router.post('/social-posts/generate', adminGenerateSocialPost);
 router.post('/social-posts/plan-month', adminPlanMonth);
 router.post('/social-posts/:id/generate', adminGenerateSlot);
