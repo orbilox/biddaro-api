@@ -1,10 +1,10 @@
 import { Response } from 'express';
 import { prisma } from '../config/database';
 import { sendSuccess, sendError } from '../utils/response';
-import { generateSocialPost } from '../utils/socialGen';
+import { generateSocialPost, topicForIndex } from '../utils/socialGen';
 import type { AuthenticatedRequest } from '../types';
 
-// ─── Cron: generate one post per run (x-cron-secret protected) ────────────────
+// ─── Cron: fill today's planned calendar slot, else generate a fresh post ─────
 export async function generateSocialPostCron(req: AuthenticatedRequest, res: Response) {
   const secret = req.headers['x-cron-secret'];
   if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
@@ -12,7 +12,31 @@ export async function generateSocialPostCron(req: AuthenticatedRequest, res: Res
   }
 
   try {
-    const gen = await generateSocialPost();
+    // Look for a planned-but-empty slot scheduled for today.
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const end   = new Date(); end.setHours(23, 59, 59, 999);
+
+    const slot = await prisma.socialPost.findFirst({
+      where: { status: 'planned', scheduledFor: { gte: start, lte: end } },
+      orderBy: { scheduledFor: 'asc' },
+    });
+
+    const gen = await generateSocialPost(slot?.topic);
+
+    if (slot) {
+      const post = await prisma.socialPost.update({
+        where: { id: slot.id },
+        data: {
+          caption:     gen.caption,
+          hashtags:    gen.hashtags,
+          imagePrompt: gen.imagePrompt,
+          imageUrl:    gen.imageUrl,
+          status:      'draft',
+        },
+      });
+      return sendSuccess(res, { post, filledSlot: true }, 'Planned slot generated');
+    }
+
     const post = await prisma.socialPost.create({
       data: {
         topic:       gen.topic,
@@ -22,9 +46,84 @@ export async function generateSocialPostCron(req: AuthenticatedRequest, res: Res
         imagePrompt: gen.imagePrompt,
         imageUrl:    gen.imageUrl,
         source:      'auto',
+        scheduledFor: new Date(),
       },
     });
-    return sendSuccess(res, { post }, 'Social post generated');
+    return sendSuccess(res, { post, filledSlot: false }, 'Social post generated');
+  } catch (err) {
+    return sendError(res, `Generation failed: ${(err as Error).message}`, 500);
+  }
+}
+
+// ─── Admin: plan a month of empty slots (no API cost) ─────────────────────────
+export async function adminPlanMonth(req: AuthenticatedRequest, res: Response) {
+  const year    = parseInt(String(req.body?.year));
+  const month   = parseInt(String(req.body?.month)); // 1-12
+  const cadence = String(req.body?.cadence || 'daily'); // daily | weekdays | mwf | custom
+  const customDays: number[] = Array.isArray(req.body?.customDays) ? req.body.customDays : []; // 0=Sun..6=Sat
+
+  if (!year || !month || month < 1 || month > 12) {
+    return sendError(res, 'Valid year and month (1-12) are required', 400);
+  }
+
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const dates: Date[] = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(year, month - 1, d, 9, 0, 0); // 9am local
+    const dow = date.getDay(); // 0=Sun..6=Sat
+    let include = false;
+    if (cadence === 'daily')        include = true;
+    else if (cadence === 'weekdays') include = dow >= 1 && dow <= 5;
+    else if (cadence === 'mwf')      include = dow === 1 || dow === 3 || dow === 5;
+    else if (cadence === 'custom')   include = customDays.includes(dow);
+    if (include) dates.push(date);
+  }
+
+  // Skip dates that already have a slot, so re-planning doesn't duplicate.
+  const monthStart = new Date(year, month - 1, 1, 0, 0, 0);
+  const monthEnd   = new Date(year, month - 1, daysInMonth, 23, 59, 59);
+  const existing = await prisma.socialPost.findMany({
+    where: { scheduledFor: { gte: monthStart, lte: monthEnd } },
+    select: { scheduledFor: true },
+  });
+  const taken = new Set(existing.map(e => e.scheduledFor ? new Date(e.scheduledFor).toDateString() : ''));
+
+  const toCreate = dates.filter(d => !taken.has(d.toDateString()));
+  let created = 0;
+  for (let i = 0; i < toCreate.length; i++) {
+    await prisma.socialPost.create({
+      data: {
+        topic:        topicForIndex(i),
+        status:       'planned',
+        source:       'manual',
+        scheduledFor: toCreate[i],
+      },
+    });
+    created++;
+  }
+
+  return sendSuccess(res, { created, skipped: dates.length - toCreate.length }, `Planned ${created} day(s)`);
+}
+
+// ─── Admin: generate content for one existing slot ────────────────────────────
+export async function adminGenerateSlot(req: AuthenticatedRequest, res: Response) {
+  const { id } = req.params;
+  const slot = await prisma.socialPost.findUnique({ where: { id } });
+  if (!slot) return sendError(res, 'Slot not found', 404);
+
+  try {
+    const gen = await generateSocialPost(slot.topic);
+    const post = await prisma.socialPost.update({
+      where: { id },
+      data: {
+        caption:     gen.caption,
+        hashtags:    gen.hashtags,
+        imagePrompt: gen.imagePrompt,
+        imageUrl:    gen.imageUrl,
+        status:      slot.status === 'planned' ? 'draft' : slot.status,
+      },
+    });
+    return sendSuccess(res, { post }, 'Generated');
   } catch (err) {
     return sendError(res, `Generation failed: ${(err as Error).message}`, 500);
   }
@@ -52,15 +151,29 @@ export async function adminGenerateSocialPost(req: AuthenticatedRequest, res: Re
   }
 }
 
-// ─── Admin: list generated posts ──────────────────────────────────────────────
+// ─── Admin: list posts (list view + calendar view via from/to) ────────────────
 export async function adminListSocialPosts(req: AuthenticatedRequest, res: Response) {
-  const page   = Math.max(1, parseInt(String(req.query.page  || '1')));
-  const limit  = Math.min(60, parseInt(String(req.query.limit || '30')));
-  const skip   = (page - 1) * limit;
-  const status = req.query.status as string | undefined; // draft | used | archived
+  const status = req.query.status as string | undefined; // planned | draft | used | archived
+  const from   = req.query.from as string | undefined;    // ISO date — calendar range start
+  const to     = req.query.to   as string | undefined;    // ISO date — calendar range end
 
   const where: Record<string, unknown> = {};
-  if (status && ['draft', 'used', 'archived'].includes(status)) where.status = status;
+  if (status && ['planned', 'draft', 'used', 'archived'].includes(status)) where.status = status;
+
+  // Calendar mode: return everything scheduled within the range, ordered by date.
+  if (from && to) {
+    where.scheduledFor = { gte: new Date(from), lte: new Date(to) };
+    const posts = await prisma.socialPost.findMany({
+      where,
+      orderBy: { scheduledFor: 'asc' },
+    });
+    return sendSuccess(res, { posts, total: posts.length });
+  }
+
+  // List mode: paginated, newest first.
+  const page  = Math.max(1, parseInt(String(req.query.page  || '1')));
+  const limit = Math.min(60, parseInt(String(req.query.limit || '30')));
+  const skip  = (page - 1) * limit;
 
   const [posts, total] = await prisma.$transaction([
     prisma.socialPost.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),

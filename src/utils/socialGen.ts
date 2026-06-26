@@ -3,7 +3,7 @@ import { uploadBufferToS3, isS3Configured } from './s3';
 
 // ─── Rotating content themes for Biddaro's social presence ───────────────────
 // Construction marketplace serving India, UAE, and Singapore.
-const TOPICS = [
+export const SOCIAL_TOPICS = [
   'A money-saving tip for homeowners planning a renovation',
   'Why getting multiple bids saves you money on construction projects',
   'How to spot a trustworthy contractor (red flags to avoid)',
@@ -18,12 +18,15 @@ const TOPICS = [
   'Why digital inspections are the future of construction',
 ];
 
+/** Deterministic topic for a given index (used by the calendar planner). */
+export function topicForIndex(i: number): string {
+  return SOCIAL_TOPICS[((i % SOCIAL_TOPICS.length) + SOCIAL_TOPICS.length) % SOCIAL_TOPICS.length];
+}
+
 function pickTopic(): string {
-  // Rotate by day-of-year so each day gets a different, deterministic theme,
-  // with a little randomness so manual re-runs vary.
+  // Rotate by day-of-year so each day gets a different, deterministic theme.
   const day = Math.floor(Date.now() / 86_400_000);
-  const base = TOPICS[day % TOPICS.length];
-  return base;
+  return SOCIAL_TOPICS[day % SOCIAL_TOPICS.length];
 }
 
 export interface GeneratedPost {
