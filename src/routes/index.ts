@@ -27,6 +27,7 @@ import referralRoutes from './referral.routes';
 import siteManagerRoutes from './siteManager.routes';
 import connectsRoutes from './connects.routes';
 import inspectRoutes from './inspect.routes';
+import socialPostsRoutes from './socialPosts.routes';
 
 const router = Router();
 
@@ -90,6 +91,7 @@ router.use('/referral', referralRoutes);
 router.use('/site-manager', siteManagerRoutes);
 router.use('/connects', connectsRoutes);
 router.use('/inspect', inspectRoutes);
+router.use('/social-posts', socialPostsRoutes);
 
 // ─── One-time setup endpoints ─────────────────────────────────────────────────
 import { prisma } from '../config/database';

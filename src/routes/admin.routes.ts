@@ -29,6 +29,12 @@ import {
 } from '../controllers/premium.controller';
 import { adminListLoanLeads } from '../controllers/loanLeads.controller';
 import { adminPushStats } from '../controllers/pushStats.controller';
+import {
+  adminListSocialPosts,
+  adminGenerateSocialPost,
+  adminUpdateSocialPost,
+  adminDeleteSocialPost,
+} from '../controllers/socialPosts.controller';
 
 const router = Router();
 
@@ -76,6 +82,12 @@ router.get('/loan-leads', adminListLoanLeads);
 
 // ── Push Notifications ───────────────────────────────────────────────────────
 router.get('/push-stats', adminPushStats);
+
+// ── Social Posts ─────────────────────────────────────────────────────────────
+router.get('/social-posts', adminListSocialPosts);
+router.post('/social-posts/generate', adminGenerateSocialPost);
+router.patch('/social-posts/:id', adminUpdateSocialPost);
+router.delete('/social-posts/:id', adminDeleteSocialPost);
 
 // ── Premium Management ────────────────────────────────────────────────────────
 router.get('/premium/stats', adminPremiumStats);

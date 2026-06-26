@@ -1400,3 +1400,19 @@ model PushLog {
   @@index([userId])
   @@index([sentAt])
 }
+
+model SocialPost {
+  id          String   @id @default(cuid())
+  topic       String                       // the theme this post was generated around
+  platform    String   @default("instagram") // suggested target: instagram | facebook | linkedin
+  caption     String                       // the post text/caption
+  hashtags    String?                      // space-separated hashtags
+  imagePrompt String?                      // the prompt used to generate the image
+  imageUrl    String?                      // S3 URL of the generated image (null if image gen unavailable)
+  status      String   @default("draft")   // draft | used | archived
+  source      String   @default("auto")    // auto (cron) | manual (admin "generate now")
+  createdAt   DateTime @default(now())
+
+  @@index([status])
+  @@index([createdAt])
+}
