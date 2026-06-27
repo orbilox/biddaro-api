@@ -170,7 +170,11 @@ export async function adminListSocialPosts(req: AuthenticatedRequest, res: Respo
     return sendSuccess(res, { posts, total: posts.length });
   }
 
-  // List mode: paginated, newest first.
+  // List mode: paginated, newest first. Planned (ungenerated) slots are
+  // calendar-only placeholders — exclude them from the flat post library
+  // unless explicitly requested.
+  if (where.status === undefined) where.status = { not: 'planned' };
+
   const page  = Math.max(1, parseInt(String(req.query.page  || '1')));
   const limit = Math.min(60, parseInt(String(req.query.limit || '30')));
   const skip  = (page - 1) * limit;
