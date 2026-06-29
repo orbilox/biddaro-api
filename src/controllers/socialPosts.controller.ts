@@ -31,6 +31,7 @@ export async function generateSocialPostCron(req: AuthenticatedRequest, res: Res
           hashtags:    gen.hashtags,
           imagePrompt: gen.imagePrompt,
           imageUrl:    gen.imageUrl,
+          imageError:  gen.imageError ?? null,
           status:      'draft',
         },
       });
@@ -45,6 +46,7 @@ export async function generateSocialPostCron(req: AuthenticatedRequest, res: Res
         hashtags:    gen.hashtags,
         imagePrompt: gen.imagePrompt,
         imageUrl:    gen.imageUrl,
+        imageError:  gen.imageError ?? null,
         source:      'auto',
         scheduledFor: new Date(),
       },
@@ -120,6 +122,7 @@ export async function adminGenerateSlot(req: AuthenticatedRequest, res: Response
         hashtags:    gen.hashtags,
         imagePrompt: gen.imagePrompt,
         imageUrl:    gen.imageUrl,
+        imageError:  gen.imageError ?? null,
         status:      slot.status === 'planned' ? 'draft' : slot.status,
       },
     });
@@ -142,6 +145,7 @@ export async function adminGenerateSocialPost(req: AuthenticatedRequest, res: Re
         hashtags:    gen.hashtags,
         imagePrompt: gen.imagePrompt,
         imageUrl:    gen.imageUrl,
+        imageError:  gen.imageError ?? null,
         source:      'manual',
       },
     });

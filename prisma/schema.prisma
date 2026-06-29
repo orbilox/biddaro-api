@@ -1409,6 +1409,7 @@ model SocialPost {
   hashtags     String?                       // space-separated hashtags
   imagePrompt  String?                       // the prompt used to generate the image
   imageUrl     String?                       // S3 URL of the generated image (null if image gen unavailable)
+  imageError   String?                       // why image generation failed, if it did (admin diagnostics)
   status       String    @default("draft")   // planned | draft | used | archived
   source       String    @default("auto")    // auto (cron) | manual (admin "generate now")
   scheduledFor DateTime?                      // calendar date this post is planned for
