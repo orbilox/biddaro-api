@@ -114,18 +114,26 @@ async function generateImageOpenAI(imagePrompt: string): Promise<string | null> 
   const openai = new OpenAI({ apiKey });
   const model = process.env.OPENAI_IMAGE_MODEL || 'dall-e-3';
 
+  // Note: the images API no longer accepts `response_format`. dall-e-* returns
+  // a temporary URL by default; gpt-image-1 returns base64. Handle both.
   const result = await openai.images.generate({
     model,
     prompt: imagePrompt,
     size: '1024x1024',
     n: 1,
-    // dall-e-* needs response_format; gpt-image-1 returns base64 by default.
-    ...(model.startsWith('dall-e') ? { response_format: 'b64_json' as const } : {}),
   });
 
-  const b64 = result.data?.[0]?.b64_json;
-  if (!b64) throw new Error(`OpenAI image API returned no image data (model: ${model})`);
-  const buffer = Buffer.from(b64, 'base64');
+  const img = result.data?.[0];
+  let buffer: Buffer;
+  if (img?.b64_json) {
+    buffer = Buffer.from(img.b64_json, 'base64');
+  } else if (img?.url) {
+    const r = await fetch(img.url);
+    if (!r.ok) throw new Error(`Could not download generated image (${r.status})`);
+    buffer = Buffer.from(await r.arrayBuffer());
+  } else {
+    throw new Error(`OpenAI image API returned no image data (model: ${model})`);
+  }
   return uploadBufferToS3(buffer, 'image/png', 'png', 'social');
 }
 
