@@ -42,7 +42,22 @@ export interface GeneratedPost {
 interface CaptionResult {
   caption:     string;
   hashtags:    string;
-  imagePrompt: string;
+  headline:    string;   // short punchy text to display on the post graphic
+  imagePrompt: string;   // the background scene/visual concept
+}
+
+// Wrap the AI-written scene into a branded, designed social-media-post prompt.
+// gpt-image-1 renders text + layouts well, so we ask for an actual graphic
+// (headline + Biddaro wordmark + brand colors) rather than a plain stock photo.
+function buildBrandedImagePrompt(headline: string, scene: string): string {
+  return [
+    `Design a bold, modern, scroll-stopping square (1:1) Instagram social-media post graphic for "Biddaro", a construction marketplace brand.`,
+    `Prominent large headline text, perfectly legible and correctly spelled: "${headline}".`,
+    `Place the brand wordmark "Biddaro" cleanly in a corner like a logo.`,
+    `Background / visual concept: ${scene}.`,
+    `Style: premium marketing poster, vibrant brand palette of bright construction orange (#EA580C) and deep navy, strong typographic hierarchy, high contrast, depth and modern graphic-design layout (shapes, accents) — NOT a plain photo.`,
+    `Crisp readable text, tasteful margins, polished and professional.`,
+  ].join(' ');
 }
 
 // ─── Step 1: OpenAI (ChatGPT) writes the caption + image prompt ───────────────
@@ -67,8 +82,8 @@ async function generateCaption(topic: string): Promise<CaptionResult> {
           'Write engaging, professional yet friendly social media content. Respond ONLY with a JSON ' +
           'object with exactly these keys: "caption" (a 2-4 sentence post, may use 1-2 emojis, no hashtags inside), ' +
           '"hashtags" (5-8 relevant hashtags as a single space-separated string, each starting with #), ' +
-          '"imagePrompt" (a vivid, detailed prompt for an AI image generator describing a photorealistic, ' +
-          'professional image that fits this post — no text or logos in the image).',
+          '"headline" (a punchy 3-7 word headline to display in big text on the post graphic, e.g. "Build Smarter, Bid Better"), ' +
+          '"imagePrompt" (a vivid 1-2 sentence description of the BACKGROUND VISUAL SCENE/concept only — e.g. "a modern construction site at golden hour with a contractor reviewing blueprints" — do not mention text, it will be added separately).',
       },
       {
         role: 'user',
@@ -87,7 +102,8 @@ async function generateCaption(topic: string): Promise<CaptionResult> {
   return {
     caption:     parsed.caption     || `Tip from Biddaro: ${topic}.`,
     hashtags:    parsed.hashtags    || '#Biddaro #Construction #Contractors #HomeImprovement',
-    imagePrompt: parsed.imagePrompt || `Professional photorealistic image: ${topic}, construction theme, bright and clean`,
+    headline:    parsed.headline    || topic,
+    imagePrompt: parsed.imagePrompt || `a modern construction scene related to ${topic}, bright and professional`,
   };
 }
 
@@ -116,12 +132,18 @@ async function generateImageOpenAI(imagePrompt: string): Promise<string | null> 
 
   // Note: the images API no longer accepts `response_format`. dall-e-* returns
   // a temporary URL by default; gpt-image-1 returns base64. Handle both.
-  const result = await openai.images.generate({
+  const genParams: Record<string, unknown> = {
     model,
     prompt: imagePrompt,
     size: '1024x1024',
     n: 1,
-  });
+  };
+  // gpt-image-1 supports a quality setting for sharper, more polished output.
+  if (model.startsWith('gpt-image')) genParams.quality = process.env.OPENAI_IMAGE_QUALITY || 'high';
+
+  const result = await openai.images.generate(genParams as never) as unknown as {
+    data?: Array<{ b64_json?: string; url?: string }>;
+  };
 
   const img = result.data?.[0];
   let buffer: Buffer;
@@ -175,19 +197,22 @@ async function generateImageGemini(imagePrompt: string): Promise<string | null> 
 export async function generateSocialPost(customTopic?: string): Promise<GeneratedPost> {
   const topic = customTopic?.trim() || pickTopic();
 
-  const { caption, hashtags, imagePrompt } = await generateCaption(topic);
+  const { caption, hashtags, headline, imagePrompt } = await generateCaption(topic);
+
+  // Build a branded, designed social-post graphic prompt from the scene + headline.
+  const brandedPrompt = buildBrandedImagePrompt(headline, imagePrompt);
 
   // Image is best-effort: never let an image failure block the caption,
   // but capture the reason so the admin can see why it failed.
   let imageUrl: string | null = null;
   let imageError: string | undefined;
   try {
-    imageUrl = await generateImage(imagePrompt);
+    imageUrl = await generateImage(brandedPrompt);
     if (!imageUrl) imageError = 'Image step produced nothing — check S3 keys (AWS_*) and the image provider config on Railway.';
   } catch (err) {
     imageError = (err as Error).message;
     console.error('[socialGen] image generation failed:', imageError);
   }
 
-  return { topic, caption, hashtags, imagePrompt, imageUrl, imageError, platform: 'instagram' };
+  return { topic, caption, hashtags, imagePrompt: brandedPrompt, imageUrl, imageError, platform: 'instagram' };
 }
