@@ -90,11 +90,48 @@ async function generateCaption(topic: string): Promise<CaptionResult> {
   };
 }
 
-// ─── Step 2: Gemini turns the image prompt into an actual image ───────────────
+// ─── Step 2: turn the image prompt into an actual image ──────────────────────
+// Provider is chosen by IMAGE_PROVIDER (openai | gemini). Defaults to OpenAI
+// when an OpenAI key is present, so captions + images run off one billing account.
 async function generateImage(imagePrompt: string): Promise<string | null> {
+  if (!isS3Configured()) return null; // nowhere to store the result
+
+  const provider = (process.env.IMAGE_PROVIDER
+    || (process.env.OPENAI_API_KEY ? 'openai' : 'gemini')).toLowerCase();
+
+  return provider === 'gemini'
+    ? generateImageGemini(imagePrompt)
+    : generateImageOpenAI(imagePrompt);
+}
+
+// OpenAI image generation (DALL·E 3 by default — works on any funded account,
+// no org verification needed; set OPENAI_IMAGE_MODEL=gpt-image-1 for the newer model).
+async function generateImageOpenAI(imagePrompt: string): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const openai = new OpenAI({ apiKey });
+  const model = process.env.OPENAI_IMAGE_MODEL || 'dall-e-3';
+
+  const result = await openai.images.generate({
+    model,
+    prompt: imagePrompt,
+    size: '1024x1024',
+    n: 1,
+    // dall-e-* needs response_format; gpt-image-1 returns base64 by default.
+    ...(model.startsWith('dall-e') ? { response_format: 'b64_json' as const } : {}),
+  });
+
+  const b64 = result.data?.[0]?.b64_json;
+  if (!b64) return null;
+  const buffer = Buffer.from(b64, 'base64');
+  return uploadBufferToS3(buffer, 'image/png', 'png', 'social');
+}
+
+// Gemini image generation (kept for accounts that prefer Gemini billing).
+async function generateImageGemini(imagePrompt: string): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;          // image is optional — caption-only post is fine
-  if (!isS3Configured()) return null; // nowhere to store the result
 
   const model = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image-preview';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
