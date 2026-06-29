@@ -112,7 +112,7 @@ async function generateImageOpenAI(imagePrompt: string): Promise<string | null> 
   if (!apiKey) return null;
 
   const openai = new OpenAI({ apiKey });
-  const model = process.env.OPENAI_IMAGE_MODEL || 'dall-e-3';
+  const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
 
   // Note: the images API no longer accepts `response_format`. dall-e-* returns
   // a temporary URL by default; gpt-image-1 returns base64. Handle both.
