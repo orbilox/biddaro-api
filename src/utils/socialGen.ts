@@ -35,6 +35,7 @@ export interface GeneratedPost {
   hashtags:    string;
   imagePrompt: string;
   imageUrl:    string | null;
+  imageError?: string;   // why the image failed (for admin diagnostics)
   platform:    string;
 }
 
@@ -123,7 +124,7 @@ async function generateImageOpenAI(imagePrompt: string): Promise<string | null> 
   });
 
   const b64 = result.data?.[0]?.b64_json;
-  if (!b64) return null;
+  if (!b64) throw new Error(`OpenAI image API returned no image data (model: ${model})`);
   const buffer = Buffer.from(b64, 'base64');
   return uploadBufferToS3(buffer, 'image/png', 'png', 'social');
 }
@@ -168,13 +169,17 @@ export async function generateSocialPost(customTopic?: string): Promise<Generate
 
   const { caption, hashtags, imagePrompt } = await generateCaption(topic);
 
-  // Image is best-effort: never let an image failure block the caption.
+  // Image is best-effort: never let an image failure block the caption,
+  // but capture the reason so the admin can see why it failed.
   let imageUrl: string | null = null;
+  let imageError: string | undefined;
   try {
     imageUrl = await generateImage(imagePrompt);
+    if (!imageUrl) imageError = 'Image step produced nothing — check S3 keys (AWS_*) and the image provider config on Railway.';
   } catch (err) {
-    console.error('[socialGen] image generation failed:', (err as Error).message);
+    imageError = (err as Error).message;
+    console.error('[socialGen] image generation failed:', imageError);
   }
 
-  return { topic, caption, hashtags, imagePrompt, imageUrl, platform: 'instagram' };
+  return { topic, caption, hashtags, imagePrompt, imageUrl, imageError, platform: 'instagram' };
 }

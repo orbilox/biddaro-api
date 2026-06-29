@@ -123,7 +123,7 @@ export async function adminGenerateSlot(req: AuthenticatedRequest, res: Response
         status:      slot.status === 'planned' ? 'draft' : slot.status,
       },
     });
-    return sendSuccess(res, { post }, 'Generated');
+    return sendSuccess(res, { post, imageError: gen.imageError }, 'Generated');
   } catch (err) {
     return sendError(res, `Generation failed: ${(err as Error).message}`, 500);
   }
@@ -145,7 +145,7 @@ export async function adminGenerateSocialPost(req: AuthenticatedRequest, res: Re
         source:      'manual',
       },
     });
-    return sendSuccess(res, { post }, 'Social post generated');
+    return sendSuccess(res, { post, imageError: gen.imageError }, 'Social post generated');
   } catch (err) {
     return sendError(res, `Generation failed: ${(err as Error).message}`, 500);
   }
