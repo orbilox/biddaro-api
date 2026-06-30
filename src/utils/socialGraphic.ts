@@ -1,5 +1,5 @@
 import path from 'path';
-import { createCanvas, GlobalFonts, type SKRSContext2D as Ctx } from '@napi-rs/canvas';
+import { createCanvas, loadImage, GlobalFonts, type SKRSContext2D as Ctx } from '@napi-rs/canvas';
 import { uploadBufferToS3 } from './s3';
 
 // ─── Brand palette ────────────────────────────────────────────────────────────
@@ -34,6 +34,7 @@ export interface GraphicContent {
   features:    string[];
   cta:         string;
   badge?:      string;
+  scene?:      string;   // photographic background concept (for photo layouts)
 }
 
 const W = 1080, H = 1350, PAD = 90;
@@ -247,7 +248,61 @@ function layoutD(ctx: Ctx, g: GraphicContent) {
 
 const LAYOUTS = [layoutA, layoutB, layoutC, layoutD];
 
-// ─── Render to a PNG buffer (random layout unless one is forced) ──────────────
+// ─── Photo helpers ────────────────────────────────────────────────────────────
+type Img = Awaited<ReturnType<typeof loadImage>>;
+
+/** Draw an image cover-fit into a rect (crops overflow). */
+function drawCover(ctx: Ctx, img: Img, x: number, y: number, w: number, h: number) {
+  const ir = img.width / img.height, rr = w / h;
+  let sw = img.width, sh = img.height, sx = 0, sy = 0;
+  if (ir > rr) { sw = img.height * rr; sx = (img.width - sw) / 2; }
+  else         { sh = img.width / rr;  sy = (img.height - sh) / 2; }
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
+function vGradient(ctx: Ctx, x: number, y: number, w: number, h: number, from: string, to: string) {
+  const grad = ctx.createLinearGradient(0, y, 0, y + h);
+  grad.addColorStop(0, from); grad.addColorStop(1, to);
+  ctx.fillStyle = grad; ctx.fillRect(x, y, w, h);
+}
+
+// ─── Layout E — Photo top, white content bottom ───────────────────────────────
+function layoutE(ctx: Ctx, g: GraphicContent, img: Img) {
+  bg(ctx, WHITE);
+  const photoH = 700;
+  drawCover(ctx, img, 0, 0, W, photoH);
+  vGradient(ctx, 0, 0, W, 200, 'rgba(0,0,0,0.45)', 'rgba(0,0,0,0)'); // top scrim for brand
+  brand(ctx, PAD, PAD + 24, 'left', WHITE);
+  // Orange badge straddling the seam
+  if (g.badge) badgeChip(ctx, PAD, photoH - 46, g.badge, ORANGE, WHITE);
+  let y = photoH + (g.badge ? 110 : 70);
+  y = headline(ctx, g.headline, PAD, y, W - PAD * 2, 'left', DARK, ORANGE) + 48;
+  ctx.font = '40px PoppinsMedium'; ctx.fillStyle = GRAY; ctx.fillText(g.subheadline, PAD, y);
+  ctaButton(ctx, PAD, CTA_TOP, W - PAD * 2, 128, g.cta, ORANGE, ORANGE_DK, WHITE);
+  footer(ctx, DARK, GRAY);
+}
+
+// ─── Layout F — Full-bleed photo + scrim + overlay (clean hero) ───────────────
+function layoutF(ctx: Ctx, g: GraphicContent, img: Img) {
+  drawCover(ctx, img, 0, 0, W, H);
+  vGradient(ctx, 0, 0, W, 260, 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0)');
+  vGradient(ctx, 0, H - 780, W, 780, 'rgba(0,0,0,0)', 'rgba(0,0,0,0.85)');
+  brand(ctx, PAD, PAD + 24, 'left', WHITE);
+  if (g.badge) badgeChip(ctx, PAD, H - 720, g.badge, ORANGE, WHITE);
+  headline(ctx, g.headline, PAD, H - 520, W - PAD * 2, 'left', WHITE, '#FFD9C2');
+  ctaButton(ctx, PAD, CTA_TOP, W - PAD * 2, 128, g.cta, ORANGE, ORANGE_DK, WHITE);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = WHITE; ctx.font = '32px PoppinsBold';
+  ctx.fillText('biddaro.com', W / 2, H - PAD + 4);
+  ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '25px PoppinsRegular';
+  ctx.fillText('Secured by Razorpay', W / 2, H - PAD + 44);
+  ctx.textAlign = 'left';
+}
+
+const PHOTO_LAYOUTS = [layoutE, layoutF];
+
+// ─── Render to a PNG buffer ───────────────────────────────────────────────────
+// Flat (graphic-only) layout — synchronous.
 export function renderGraphicBuffer(g: GraphicContent, layoutIndex?: number): Buffer {
   ensureFonts();
   const canvas = createCanvas(W, H);
@@ -257,7 +312,25 @@ export function renderGraphicBuffer(g: GraphicContent, layoutIndex?: number): Bu
   return canvas.toBuffer('image/png');
 }
 
-export async function renderTemplateGraphic(g: GraphicContent): Promise<string | null> {
-  const buffer = renderGraphicBuffer(g);
+// Photo layout — composites a real photo with the branded overlay.
+export async function renderPhotoBuffer(g: GraphicContent, photo: Buffer, layoutIndex?: number): Promise<Buffer> {
+  ensureFonts();
+  const img = await loadImage(photo);
+  const canvas = createCanvas(W, H);
+  const ctx = canvas.getContext('2d');
+  const idx = layoutIndex ?? Math.floor(Math.random() * PHOTO_LAYOUTS.length);
+  PHOTO_LAYOUTS[idx % PHOTO_LAYOUTS.length](ctx, g, img);
+  return canvas.toBuffer('image/png');
+}
+
+/** Render (flat, or photo if a photo buffer is supplied) and upload to S3. */
+export async function renderTemplateGraphic(g: GraphicContent, photo?: Buffer | null): Promise<string | null> {
+  let buffer: Buffer;
+  if (photo) {
+    try { buffer = await renderPhotoBuffer(g, photo); }
+    catch { buffer = renderGraphicBuffer(g); }   // fall back to flat if the photo can't load
+  } else {
+    buffer = renderGraphicBuffer(g);
+  }
   return uploadBufferToS3(buffer, 'image/png', 'png', 'social');
 }

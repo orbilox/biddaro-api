@@ -85,7 +85,8 @@ async function generateCaption(topic: string): Promise<CaptionResult> {
           '"subheadline" (one short supporting line, max ~6 words), ' +
           '"features" (an array of exactly 4 very short benefit labels, each 1-3 words, e.g. ["No Collateral","24hr Approval","8% Rate","Verified Pros"]), ' +
           '"cta" (a punchy 2-4 word call to action, e.g. "Apply Now" or "Abhi Apply Karo"), ' +
-          '"badge" (an optional very short highlight chip, e.g. "Up to ₹5 Lakh" or "Free to Post", max 4 words). ' +
+          '"badge" (an optional very short highlight chip, e.g. "Up to ₹5 Lakh" or "Free to Post", max 4 words), ' +
+          '"scene" (a 1-sentence description of a clean photographic background that fits the post — e.g. "a happy Indian family standing in front of their new home in warm sunlight" — describe people/place/mood only, NO text or logos). ' +
           'Keep all poster text concise so it fits cleanly — no long sentences in headline/features/cta/badge.',
       },
       {
@@ -117,6 +118,7 @@ async function generateCaption(topic: string): Promise<CaptionResult> {
       features,
       cta:         (parsed.cta   as string) || 'Get Started',
       badge:       (parsed.badge as string) || undefined,
+      scene:       (parsed.scene as string) || undefined,
     },
   };
 }
@@ -130,32 +132,38 @@ async function generateImage(g: GraphicContent): Promise<string | null> {
 
   const provider = (process.env.IMAGE_PROVIDER || 'template').toLowerCase();
 
-  if (provider === 'template') return renderTemplateGraphic(g);
+  if (provider === 'template') {
+    // Some posts mix in a real photo behind the branded overlay. The AI makes a
+    // clean photo (no text); we draw the text, so it stays perfect.
+    let photo: Buffer | null = null;
+    const ratio = parseFloat(process.env.IMAGE_PHOTO_RATIO || '0.4');
+    if (g.scene && process.env.OPENAI_API_KEY && Math.random() < ratio) {
+      try { photo = await openAIImageBuffer(buildPhotoPrompt(g.scene)); }
+      catch (err) { console.error('[socialGen] photo fetch failed, using flat layout:', (err as Error).message); }
+    }
+    return renderTemplateGraphic(g, photo);
+  }
 
   const prompt = buildBrandedImagePrompt(g);
   return provider === 'gemini'
     ? generateImageGemini(prompt)
-    : generateImageOpenAI(prompt);
+    : (async () => { const b = await openAIImageBuffer(prompt); return uploadBufferToS3(b, 'image/png', 'png', 'social'); })();
 }
 
-// OpenAI image generation (DALL·E 3 by default — works on any funded account,
-// no org verification needed; set OPENAI_IMAGE_MODEL=gpt-image-1 for the newer model).
-async function generateImageOpenAI(imagePrompt: string): Promise<string | null> {
+// A clean photographic prompt — explicitly NO text (we overlay our own).
+function buildPhotoPrompt(scene: string): string {
+  return `Professional high-quality photograph: ${scene}. Realistic, bright, clean composition, shallow depth of field. Absolutely no text, no words, no letters, no logos, no watermark.`;
+}
+
+// OpenAI image generation → returns the raw PNG buffer.
+async function openAIImageBuffer(imagePrompt: string): Promise<Buffer> {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
 
   const openai = new OpenAI({ apiKey });
   const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
 
-  // Note: the images API no longer accepts `response_format`. dall-e-* returns
-  // a temporary URL by default; gpt-image-1 returns base64. Handle both.
-  const genParams: Record<string, unknown> = {
-    model,
-    prompt: imagePrompt,
-    size: '1024x1024',
-    n: 1,
-  };
-  // gpt-image-1 supports a quality setting for sharper, more polished output.
+  const genParams: Record<string, unknown> = { model, prompt: imagePrompt, size: '1024x1024', n: 1 };
   if (model.startsWith('gpt-image')) genParams.quality = process.env.OPENAI_IMAGE_QUALITY || 'high';
 
   const result = await openai.images.generate(genParams as never) as unknown as {
@@ -163,17 +171,13 @@ async function generateImageOpenAI(imagePrompt: string): Promise<string | null> 
   };
 
   const img = result.data?.[0];
-  let buffer: Buffer;
-  if (img?.b64_json) {
-    buffer = Buffer.from(img.b64_json, 'base64');
-  } else if (img?.url) {
+  if (img?.b64_json) return Buffer.from(img.b64_json, 'base64');
+  if (img?.url) {
     const r = await fetch(img.url);
     if (!r.ok) throw new Error(`Could not download generated image (${r.status})`);
-    buffer = Buffer.from(await r.arrayBuffer());
-  } else {
-    throw new Error(`OpenAI image API returned no image data (model: ${model})`);
+    return Buffer.from(await r.arrayBuffer());
   }
-  return uploadBufferToS3(buffer, 'image/png', 'png', 'social');
+  throw new Error(`OpenAI image API returned no image data (model: ${model})`);
 }
 
 // Gemini image generation (kept for accounts that prefer Gemini billing).
