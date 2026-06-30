@@ -77,14 +77,15 @@ async function generateCaption(topic: string): Promise<CaptionResult> {
           'You are the social media manager for Biddaro, a construction marketplace that connects ' +
           'homeowners and businesses with verified contractors, and also offers construction loans ' +
           'and digital site inspections. Biddaro operates in India, the UAE, and Singapore. ' +
-          'Write engaging, professional yet friendly content, and structured content for a branded ' +
-          'poster graphic. Respond ONLY with a JSON object with exactly these keys: ' +
-          '"caption" (a 2-4 sentence post, may use 1-2 emojis, no hashtags inside), ' +
+          'The main audience is India, so write the poster in catchy HINGLISH (Hindi + English in Roman ' +
+          'script) — punchy, desi, and relatable, like "Apna Sapna, Apna Loan" and "Abhi Apply Karo". ' +
+          'Respond ONLY with a JSON object with exactly these keys: ' +
+          '"caption" (a 2-4 sentence post in friendly Hinglish, may use 1-2 emojis, no hashtags inside), ' +
           '"hashtags" (5-8 relevant hashtags as one space-separated string, each starting with #), ' +
-          '"headline" (a punchy 2-5 word headline for the poster, e.g. "Build Smarter, Bid Better"; a Hinglish phrase is great when natural), ' +
-          '"subheadline" (one short supporting line, max ~6 words), ' +
-          '"features" (an array of exactly 4 very short benefit labels, each 1-3 words, e.g. ["No Collateral","24hr Approval","8% Rate","Verified Pros"]), ' +
-          '"cta" (a punchy 2-4 word call to action, e.g. "Apply Now" or "Abhi Apply Karo"), ' +
+          '"headline" (a punchy 2-5 word HINGLISH headline, e.g. "Apna Sapna, Apna Loan", "Sahi Contractor, Tension-Free Ghar", "Paisa Safe, Kaam Pakka"), ' +
+          '"subheadline" (one short supporting line in simple English or Hinglish, max ~6 words), ' +
+          '"features" (an array of exactly 4 very short benefit labels in English, each 1-3 words, e.g. ["No Collateral","24hr Approval","8% Rate","Verified Pros"]), ' +
+          '"cta" (a punchy 2-3 word HINGLISH call to action, e.g. "Abhi Apply Karo", "Contractor Dhoondo", "Job Post Karo"), ' +
           '"badge" (an optional very short highlight chip, e.g. "Up to ₹5 Lakh" or "Free to Post", max 4 words), ' +
           '"scene" (a 1-sentence description of a clean photographic background that fits the post — e.g. "a happy Indian family standing in front of their new home in warm sunlight" — describe people/place/mood only, NO text or logos). ' +
           'Keep all poster text concise so it fits cleanly — no long sentences in headline/features/cta/badge.',
