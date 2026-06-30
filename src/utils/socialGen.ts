@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { uploadBufferToS3, isS3Configured } from './s3';
+import { renderTemplateGraphic, type GraphicContent } from './socialGraphic';
 
 // ─── Rotating content themes for Biddaro's social presence ───────────────────
 // Construction marketplace serving India, UAE, and Singapore.
@@ -40,23 +41,20 @@ export interface GeneratedPost {
 }
 
 interface CaptionResult {
-  caption:     string;
-  hashtags:    string;
-  headline:    string;   // short punchy text to display on the post graphic
-  imagePrompt: string;   // the background scene/visual concept
+  caption:  string;
+  hashtags: string;
+  graphic:  GraphicContent;   // structured content for the branded template
 }
 
-// Wrap the AI-written scene into a branded, designed social-media-post prompt.
-// gpt-image-1 renders text + layouts well, so we ask for an actual graphic
-// (headline + Biddaro wordmark + brand colors) rather than a plain stock photo.
-function buildBrandedImagePrompt(headline: string, scene: string): string {
+// For the AI-image fallback providers (gpt-image-1 / gemini) only.
+function buildBrandedImagePrompt(g: GraphicContent): string {
   return [
-    `Design a bold, modern, scroll-stopping square (1:1) Instagram social-media post graphic for "Biddaro", a construction marketplace brand.`,
-    `Prominent large headline text, perfectly legible and correctly spelled: "${headline}".`,
-    `Place the brand wordmark "Biddaro" cleanly in a corner like a logo.`,
-    `Background / visual concept: ${scene}.`,
-    `Style: premium marketing poster, vibrant brand palette of bright construction orange (#EA580C) and deep navy, strong typographic hierarchy, high contrast, depth and modern graphic-design layout (shapes, accents) — NOT a plain photo.`,
-    `Crisp readable text, tasteful margins, polished and professional.`,
+    `Design a bold, modern, scroll-stopping Instagram post graphic for "Biddaro", a construction marketplace brand.`,
+    `Prominent large headline, perfectly legible: "${g.headline}". Subheading: "${g.subheadline}".`,
+    `Show benefit chips: ${g.features.join(', ')}. A call-to-action button: "${g.cta}".`,
+    `Place the brand wordmark "Biddaro" cleanly in a corner.`,
+    `Style: premium flat marketing poster, white background, vibrant construction orange (#EA580C) and deep navy, rounded pill buttons, strong typographic hierarchy — clean graphic design, not a photo.`,
+    `Crisp correctly-spelled text, tasteful margins.`,
   ].join(' ');
 }
 
@@ -79,11 +77,16 @@ async function generateCaption(topic: string): Promise<CaptionResult> {
           'You are the social media manager for Biddaro, a construction marketplace that connects ' +
           'homeowners and businesses with verified contractors, and also offers construction loans ' +
           'and digital site inspections. Biddaro operates in India, the UAE, and Singapore. ' +
-          'Write engaging, professional yet friendly social media content. Respond ONLY with a JSON ' +
-          'object with exactly these keys: "caption" (a 2-4 sentence post, may use 1-2 emojis, no hashtags inside), ' +
-          '"hashtags" (5-8 relevant hashtags as a single space-separated string, each starting with #), ' +
-          '"headline" (a punchy 3-7 word headline to display in big text on the post graphic, e.g. "Build Smarter, Bid Better"), ' +
-          '"imagePrompt" (a vivid 1-2 sentence description of the BACKGROUND VISUAL SCENE/concept only — e.g. "a modern construction site at golden hour with a contractor reviewing blueprints" — do not mention text, it will be added separately).',
+          'Write engaging, professional yet friendly content, and structured content for a branded ' +
+          'poster graphic. Respond ONLY with a JSON object with exactly these keys: ' +
+          '"caption" (a 2-4 sentence post, may use 1-2 emojis, no hashtags inside), ' +
+          '"hashtags" (5-8 relevant hashtags as one space-separated string, each starting with #), ' +
+          '"headline" (a punchy 2-5 word headline for the poster, e.g. "Build Smarter, Bid Better"; a Hinglish phrase is great when natural), ' +
+          '"subheadline" (one short supporting line, max ~6 words), ' +
+          '"features" (an array of exactly 4 very short benefit labels, each 1-3 words, e.g. ["No Collateral","24hr Approval","8% Rate","Verified Pros"]), ' +
+          '"cta" (a punchy 2-4 word call to action, e.g. "Apply Now" or "Abhi Apply Karo"), ' +
+          '"badge" (an optional very short highlight chip, e.g. "Up to ₹5 Lakh" or "Free to Post", max 4 words). ' +
+          'Keep all poster text concise so it fits cleanly — no long sentences in headline/features/cta/badge.',
       },
       {
         role: 'user',
@@ -93,32 +96,46 @@ async function generateCaption(topic: string): Promise<CaptionResult> {
   });
 
   const raw = completion.choices[0]?.message?.content || '{}';
-  let parsed: Partial<CaptionResult>;
+  let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(raw);
   } catch {
     parsed = {};
   }
+
+  const features = Array.isArray(parsed.features)
+    ? (parsed.features as unknown[]).map(String).filter(Boolean).slice(0, 4)
+    : [];
+  while (features.length < 4) features.push(['Verified Pros', 'Fast & Easy', 'Trusted', 'Secure'][features.length]);
+
   return {
-    caption:     parsed.caption     || `Tip from Biddaro: ${topic}.`,
-    hashtags:    parsed.hashtags    || '#Biddaro #Construction #Contractors #HomeImprovement',
-    headline:    parsed.headline    || topic,
-    imagePrompt: parsed.imagePrompt || `a modern construction scene related to ${topic}, bright and professional`,
+    caption:  (parsed.caption  as string) || `Tip from Biddaro: ${topic}.`,
+    hashtags: (parsed.hashtags as string) || '#Biddaro #Construction #Contractors #HomeImprovement',
+    graphic: {
+      headline:    (parsed.headline    as string) || 'Build with Biddaro',
+      subheadline: (parsed.subheadline as string) || topic,
+      features,
+      cta:         (parsed.cta   as string) || 'Get Started',
+      badge:       (parsed.badge as string) || undefined,
+    },
   };
 }
 
-// ─── Step 2: turn the image prompt into an actual image ──────────────────────
-// Provider is chosen by IMAGE_PROVIDER (openai | gemini). Defaults to OpenAI
-// when an OpenAI key is present, so captions + images run off one billing account.
-async function generateImage(imagePrompt: string): Promise<string | null> {
+// ─── Step 2: turn the content into an actual image ───────────────────────────
+// IMAGE_PROVIDER chooses the engine. Defaults to 'template' — our branded
+// canvas renderer (pixel-perfect text, on-brand, free). 'openai'/'gemini' use
+// an AI image model instead (photographic/illustrated, text may be imperfect).
+async function generateImage(g: GraphicContent): Promise<string | null> {
   if (!isS3Configured()) return null; // nowhere to store the result
 
-  const provider = (process.env.IMAGE_PROVIDER
-    || (process.env.OPENAI_API_KEY ? 'openai' : 'gemini')).toLowerCase();
+  const provider = (process.env.IMAGE_PROVIDER || 'template').toLowerCase();
 
+  if (provider === 'template') return renderTemplateGraphic(g);
+
+  const prompt = buildBrandedImagePrompt(g);
   return provider === 'gemini'
-    ? generateImageGemini(imagePrompt)
-    : generateImageOpenAI(imagePrompt);
+    ? generateImageGemini(prompt)
+    : generateImageOpenAI(prompt);
 }
 
 // OpenAI image generation (DALL·E 3 by default — works on any funded account,
@@ -197,22 +214,20 @@ async function generateImageGemini(imagePrompt: string): Promise<string | null> 
 export async function generateSocialPost(customTopic?: string): Promise<GeneratedPost> {
   const topic = customTopic?.trim() || pickTopic();
 
-  const { caption, hashtags, headline, imagePrompt } = await generateCaption(topic);
-
-  // Build a branded, designed social-post graphic prompt from the scene + headline.
-  const brandedPrompt = buildBrandedImagePrompt(headline, imagePrompt);
+  const { caption, hashtags, graphic } = await generateCaption(topic);
 
   // Image is best-effort: never let an image failure block the caption,
   // but capture the reason so the admin can see why it failed.
   let imageUrl: string | null = null;
   let imageError: string | undefined;
   try {
-    imageUrl = await generateImage(brandedPrompt);
-    if (!imageUrl) imageError = 'Image step produced nothing — check S3 keys (AWS_*) and the image provider config on Railway.';
+    imageUrl = await generateImage(graphic);
+    if (!imageUrl) imageError = 'Image step produced nothing — check S3 keys (AWS_*) on Railway.';
   } catch (err) {
     imageError = (err as Error).message;
     console.error('[socialGen] image generation failed:', imageError);
   }
 
-  return { topic, caption, hashtags, imagePrompt: brandedPrompt, imageUrl, imageError, platform: 'instagram' };
+  const promptSummary = `${graphic.headline} — ${graphic.subheadline}`;
+  return { topic, caption, hashtags, imagePrompt: promptSummary, imageUrl, imageError, platform: 'instagram' };
 }
