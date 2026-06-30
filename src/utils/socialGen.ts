@@ -136,7 +136,7 @@ async function generateImage(g: GraphicContent): Promise<string | null> {
     // Some posts mix in a real photo behind the branded overlay. The AI makes a
     // clean photo (no text); we draw the text, so it stays perfect.
     let photo: Buffer | null = null;
-    const ratio = parseFloat(process.env.IMAGE_PHOTO_RATIO || '0.4');
+    const ratio = parseFloat(process.env.IMAGE_PHOTO_RATIO || '0.55');
     if (g.scene && process.env.OPENAI_API_KEY && Math.random() < ratio) {
       try { photo = await openAIImageBuffer(buildPhotoPrompt(g.scene)); }
       catch (err) { console.error('[socialGen] photo fetch failed, using flat layout:', (err as Error).message); }
