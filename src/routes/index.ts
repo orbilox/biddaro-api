@@ -28,6 +28,7 @@ import siteManagerRoutes from './siteManager.routes';
 import connectsRoutes from './connects.routes';
 import inspectRoutes from './inspect.routes';
 import socialPostsRoutes from './socialPosts.routes';
+import whatsappRoutes from './whatsapp.routes';
 
 const router = Router();
 
@@ -92,6 +93,7 @@ router.use('/site-manager', siteManagerRoutes);
 router.use('/connects', connectsRoutes);
 router.use('/inspect', inspectRoutes);
 router.use('/social-posts', socialPostsRoutes);
+router.use('/whatsapp', whatsappRoutes);
 
 // ─── One-time setup endpoints ─────────────────────────────────────────────────
 import { prisma } from '../config/database';

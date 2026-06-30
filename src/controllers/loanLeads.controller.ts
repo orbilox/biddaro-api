@@ -11,6 +11,7 @@ import {
   sendLoanFollowupStage7,
 } from '../utils/email';
 import { sendPushToUser } from '../utils/push';
+import { sendWhatsAppTemplate, normalizeWhatsAppPhone, isWhatsAppConfigured } from '../utils/whatsapp';
 import type { AuthenticatedRequest } from '../types';
 
 const STAGE_PUSH_BODIES = [
@@ -22,6 +23,18 @@ const STAGE_PUSH_BODIES = [
   'Your pre-approved loan amount is waiting for you',
   '⏰ URGENT: Your pre-approved offer expires in 48 hours',
   '🔴 Last chance — your loan offer closes tonight',
+];
+
+// Short Hinglish utility lines passed as the {{2}} variable of the loan_followup template.
+const STAGE_WHATSAPP_BODIES = [
+  '',
+  'aapki loan application abhi tak complete nahi hui — bas ek step baaki hai.',
+  'aapka profile eligible lag raha hai — apni loan application confirm kijiye.',
+  'aapki pre-approval check shuru ho gayi hai — last step complete kijiye.',
+  'badhai ho! aapki loan pre-approved hai — abhi claim kijiye.',
+  'aapka pre-approved loan amount aapka intezaar kar raha hai.',
+  'zaroori: aapka pre-approved offer 48 ghante mein expire ho raha hai.',
+  'aakhri mauka — aapka loan offer aaj raat band ho raha hai.',
 ];
 
 // ─── 7-stage journey, all within 7 days ──────────────────────────────────────
@@ -155,6 +168,20 @@ export async function processLoanReminders(req: AuthenticatedRequest, res: Respo
           body:  STAGE_PUSH_BODIES[stageNum],
           url:   `${webUrl}/loan-apply`,
         }).catch(() => {});
+      }
+
+      // Also WhatsApp the lead (no-op until Meta is configured); log every attempt.
+      if (isWhatsAppConfigured()) {
+        sendWhatsAppTemplate(
+          normalizeWhatsAppPhone(lead.phone),
+          [lead.name, STAGE_WHATSAPP_BODIES[stageNum], applyUrl],
+        )
+          .then((messageId) => prisma.whatsAppLog.create({
+            data: { leadId: lead.id, phone: lead.phone, stage: stageNum, messageId, status: 'sent' },
+          }))
+          .catch((err) => prisma.whatsAppLog.create({
+            data: { leadId: lead.id, phone: lead.phone, stage: stageNum, status: 'failed', error: String(err?.message || err) },
+          }).catch(() => {}));
       }
 
       sent++;

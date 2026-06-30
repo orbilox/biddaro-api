@@ -62,8 +62,9 @@ const limiter = rateLimit({
   // carrier CGNAT (very common in India) puts thousands of real users behind
   // one IP. A low IP-based limit on read-only browsing (job board, listings,
   // admin dashboards) caused real users sharing an IP to silently lose data.
-  // Mutating requests (POST/PUT/PATCH/DELETE) stay limited to block abuse.
-  skip: (req) => config.isDev || req.method === 'GET',
+  // Mutating requests (POST/PUT/PATCH/DELETE) stay limited to block abuse,
+  // except inbound webhooks (e.g. WhatsApp status callbacks) which fire in bursts.
+  skip: (req) => config.isDev || req.method === 'GET' || req.path.includes('/whatsapp/webhook'),
   message: { success: false, message: 'Too many requests, please try again later.' },
 });
 app.use('/api/', limiter);

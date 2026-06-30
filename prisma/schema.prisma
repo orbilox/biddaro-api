@@ -625,6 +625,25 @@ model LoanLead {
   optOut          Boolean   @default(false)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  whatsappLogs    WhatsAppLog[]
+}
+
+model WhatsAppLog {
+  id        String    @id @default(cuid())
+  leadId    String?
+  phone     String
+  stage     Int                              // follow-up stage 1..7
+  messageId String?   @unique                // Meta wamid, for status correlation
+  status    String    @default("sent")       // sent | delivered | read | failed
+  error     String?
+  sentAt    DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  lead      LoanLead? @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([leadId])
+  @@index([status])
+  @@index([sentAt])
 }
 
 model BuildCheckItem {

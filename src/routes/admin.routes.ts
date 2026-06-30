@@ -29,6 +29,7 @@ import {
 } from '../controllers/premium.controller';
 import { adminListLoanLeads } from '../controllers/loanLeads.controller';
 import { adminPushStats } from '../controllers/pushStats.controller';
+import { adminWhatsAppStats } from '../controllers/whatsapp.controller';
 import {
   adminListSocialPosts,
   adminGenerateSocialPost,
@@ -85,6 +86,9 @@ router.get('/loan-leads', adminListLoanLeads);
 
 // ── Push Notifications ───────────────────────────────────────────────────────
 router.get('/push-stats', adminPushStats);
+
+// ── WhatsApp Follow-ups ──────────────────────────────────────────────────────
+router.get('/whatsapp-stats', adminWhatsAppStats);
 
 // ── Social Posts ─────────────────────────────────────────────────────────────
 router.get('/social-posts', adminListSocialPosts);
