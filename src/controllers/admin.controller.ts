@@ -188,6 +188,16 @@ export async function listUsers(req: AuthenticatedRequest, res: Response) {
   if (role) where.role = role;
   if (isActive !== undefined) where.isActive = isActive === 'true';
   if (isVerified !== undefined) where.isVerified = isVerified === 'true';
+  // Inspectors = registered via the Inspect app OR have inspect activity
+  if (req.query.source === 'inspect') {
+    where.AND = [{
+      OR: [
+        { signupSource: 'inspect_app' },
+        { inspectProjects: { some: {} } },
+        { inspectReports: { some: {} } },
+      ],
+    }];
+  }
 
   const orderBy: any = {};
   if (sortBy === 'name') {
@@ -207,6 +217,7 @@ export async function listUsers(req: AuthenticatedRequest, res: Response) {
         role: true, isActive: true, isVerified: true,
         profileImage: true, phone: true, location: true,
         rating: true, createdAt: true, updatedAt: true,
+        signupSource: true,
         wallet: { select: { balance: true, totalEarned: true } },
         _count: {
           select: {
@@ -214,6 +225,8 @@ export async function listUsers(req: AuthenticatedRequest, res: Response) {
             placedBids: true,
             contractsAsContractor: true,
             contractsAsPoster: true,
+            inspectProjects: true,
+            inspectReports: true,
           },
         },
       },

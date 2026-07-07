@@ -46,6 +46,7 @@ model User {
   isActive          Boolean   @default(true)
   referralCode      String?   @unique
   referredBy        String?   // stores the referral code used at signup
+  signupSource      String?   @default("web")  // web | inspect_app
   connectsBalance   Int       @default(0)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt

@@ -54,7 +54,7 @@ async function generateUniqueReferralCode(): Promise<string> {
 // ─── Register ─────────────────────────────────────────────────────────────────
 
 export async function register(req: AuthenticatedRequest, res: Response): Promise<void> {
-  const { email, password, firstName, lastName, role, phone, country, referralCode } = req.body;
+  const { email, password, firstName, lastName, role, phone, country, referralCode, source } = req.body;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -96,6 +96,7 @@ export async function register(req: AuthenticatedRequest, res: Response): Promis
       isVerified: false,
       referralCode: newUserReferralCode,
       referredBy: referrer ? String(referralCode) : null,
+      signupSource: source === 'inspect_app' ? 'inspect_app' : 'web',
     },
   });
 
