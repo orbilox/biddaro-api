@@ -92,6 +92,7 @@ model User {
   inspectSchedules         InspectSchedule[]
   inspectReportVersions    InspectReportVersion[]
   pushLogs                 PushLog[]
+  contractorSite           ContractorSite?
 }
 
 model Job {
@@ -1437,4 +1438,38 @@ model SocialPost {
   @@index([status])
   @@index([createdAt])
   @@index([scheduledFor])
+}
+
+model ContractorSite {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug          String   @unique              // lowercase, [a-z0-9-]{3,40}
+  enabled       Boolean  @default(true)
+  headline      String?
+  about         String?
+  services      String?                       // JSON string[]
+  accentColor   String?  @default("#EA580C")
+  whatsapp      String?                       // Pro only
+  showReviews   Boolean  @default(true)
+  showPortfolio Boolean  @default(true)
+  isPro         Boolean  @default(false)
+  proExpiresAt  DateTime?
+  views         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  leads         WebsiteLead[]
+}
+
+model WebsiteLead {
+  id        String         @id @default(cuid())
+  siteId    String
+  site      ContractorSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  name      String
+  phone     String
+  message   String?
+  createdAt DateTime       @default(now())
+
+  @@index([siteId])
 }
