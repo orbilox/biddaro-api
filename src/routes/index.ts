@@ -155,6 +155,88 @@ router.post('/setup/make-admin', async (req: Request, res: Response) => {
   }
 });
 
+/** Seed a polished demo contractor + Pro Biddaro Site (idempotent) — protected by SETUP_SECRET */
+router.post('/setup/seed-demo-site', async (req: Request, res: Response) => {
+  try {
+    const { secret } = req.body;
+    const validSecret = process.env.SETUP_SECRET || 'biddaro_setup_2024';
+    if (secret !== validSecret) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const demoEmail = 'demo.contractor@biddaro.com';
+    const portfolio = [
+      {
+        title: '3BHK Villa — Model Town',
+        description: 'Complete turnkey construction of a 2,400 sq ft modern villa, delivered in 11 months.',
+        category: 'New Construction', year: 2025,
+        imageUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80',
+        location: 'Ludhiana',
+      },
+      {
+        title: 'Full Home Renovation',
+        description: 'Structural repairs, new flooring, modular kitchen and complete repainting of a 20-year-old home.',
+        category: 'Renovation', year: 2025,
+        imageUrl: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&q=80',
+        location: 'Ludhiana',
+      },
+      {
+        title: 'Commercial Shop Complex',
+        description: '6-unit shop complex with basement parking — RCC frame structure completed on schedule.',
+        category: 'Commercial', year: 2024,
+        imageUrl: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?w=800&q=80',
+        location: 'Jalandhar',
+      },
+      {
+        title: 'Luxury Bathroom Remodel',
+        description: 'Premium fittings, Italian tiles and waterproofing for two full bathrooms.',
+        category: 'Interiors', year: 2024,
+        imageUrl: 'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?w=800&q=80',
+        location: 'Ludhiana',
+      },
+    ];
+
+    const passwordHash = await bcrypt.hash(`demo_${Date.now()}_${Math.random().toString(36).slice(2)}`, 12);
+    const user = await prisma.user.upsert({
+      where: { email: demoEmail },
+      update: {},
+      create: {
+        email: demoEmail,
+        passwordHash,
+        firstName: 'Rajesh',
+        lastName: 'Sharma',
+        role: 'contractor',
+        isVerified: true,
+        isActive: true,
+        location: 'Ludhiana, Punjab',
+        yearsExperience: 15,
+        bio: 'Second-generation civil contractor leading a 25-member team. We handle everything from foundation to finishing — on time, on budget, with weekly progress photos for every client.',
+        skills: JSON.stringify(['House Construction', 'Renovation', 'Interiors', 'Tiling', 'Waterproofing', 'Painting']),
+        portfolio: JSON.stringify(portfolio),
+      },
+    });
+
+    const site = await prisma.contractorSite.upsert({
+      where: { userId: user.id },
+      update: { isPro: true, enabled: true },
+      create: {
+        userId: user.id,
+        slug: 'sharma-constructions',
+        headline: 'Building Dream Homes Since 2009',
+        about:
+          'Sharma Constructions is a full-service construction company based in Ludhiana. From new homes and commercial buildings to renovations and interiors, we manage the complete project — materials, labour, and quality checks — so you don\'t have to. Every project gets a dedicated site supervisor and weekly photo updates.',
+        services: JSON.stringify(['House Construction', 'Renovation', 'Modular Interiors', 'Tiling & Flooring', 'Waterproofing', 'Commercial Projects']),
+        isPro: true,
+        proExpiresAt: new Date('2099-01-01'),
+      },
+    });
+
+    return res.json({ success: true, message: 'Demo site ready', data: { slug: site.slug, url: `https://www.biddaro.com/c/${site.slug}` } });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 router.post('/setup/reset-admin-password', async (req: Request, res: Response) => {
   try {
     const { email, newPassword, secret } = req.body;
