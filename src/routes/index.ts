@@ -155,6 +155,44 @@ router.post('/setup/make-admin', async (req: Request, res: Response) => {
   }
 });
 
+/** Create/reset a pre-verified test user (contractor) — protected by SETUP_SECRET.
+ *  Used for the Inspect app test login + Google Play reviewer credentials. */
+router.post('/setup/create-test-user', async (req: Request, res: Response) => {
+  try {
+    const { email, password, secret, firstName, lastName } = req.body;
+    const validSecret = process.env.SETUP_SECRET || 'biddaro_setup_2024';
+    if (secret !== validSecret) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'email and password required' });
+    }
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = await prisma.user.upsert({
+      where: { email },
+      update: { passwordHash, isVerified: true, isActive: true },
+      create: {
+        email,
+        passwordHash,
+        firstName: firstName || 'Inspect',
+        lastName:  lastName  || 'Tester',
+        role: 'contractor',
+        isVerified: true,
+        isActive: true,
+        location: 'Ludhiana, Punjab',
+      },
+    });
+    await prisma.wallet.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: { userId: user.id, balance: 0, pendingBalance: 0, totalEarned: 0 },
+    });
+    return res.json({ success: true, message: `Test user ready: ${user.email}` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 /** Seed a polished demo contractor + Pro Biddaro Site (idempotent) — protected by SETUP_SECRET */
 router.post('/setup/seed-demo-site', async (req: Request, res: Response) => {
   try {
