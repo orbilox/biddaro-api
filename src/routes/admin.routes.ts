@@ -31,6 +31,7 @@ import { adminListLoanLeads } from '../controllers/loanLeads.controller';
 import { adminPushStats } from '../controllers/pushStats.controller';
 import { adminWhatsAppStats } from '../controllers/whatsapp.controller';
 import { adminInspectStats } from '../controllers/inspectAdmin.controller';
+import { adminSafetyStats } from '../controllers/safetyAdmin.controller';
 import {
   adminListSocialPosts,
   adminGenerateSocialPost,
@@ -93,6 +94,9 @@ router.get('/whatsapp-stats', adminWhatsAppStats);
 
 // ── Inspect App ──────────────────────────────────────────────────────────────
 router.get('/inspect-stats', adminInspectStats);
+
+// ── Safety App ───────────────────────────────────────────────────────────────
+router.get('/safety-stats', adminSafetyStats);
 
 // ── Social Posts ─────────────────────────────────────────────────────────────
 router.get('/social-posts', adminListSocialPosts);

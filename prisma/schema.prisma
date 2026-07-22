@@ -46,7 +46,7 @@ model User {
   isActive          Boolean   @default(true)
   referralCode      String?   @unique
   referredBy        String?   // stores the referral code used at signup
-  signupSource      String?   @default("web")  // web | inspect_app
+  signupSource      String?   @default("web")  // web | inspect_app | safety_app
   connectsBalance   Int       @default(0)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -94,6 +94,12 @@ model User {
   inspectReportVersions    InspectReportVersion[]
   pushLogs                 PushLog[]
   contractorSite           ContractorSite?
+  safetySites              SafetySite[]
+  safetyTalks              SafetyToolboxTalk[]
+  safetyAuditTemplates     SafetyAuditTemplate[]
+  safetyAudits             SafetyAudit[]
+  safetyHazards            SafetyHazard[]         @relation("safetyHazardReporter")
+  safetySettings           SafetySettings?
 }
 
 model Job {
@@ -1473,4 +1479,122 @@ model WebsiteLead {
   createdAt DateTime       @default(now())
 
   @@index([siteId])
+}
+
+// ─── Biddaro Safety (dedicated site-safety app) ──────────────────────────────
+
+model SafetySite {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  location   String?
+  clientName String?
+  status     String   @default("active")   // active | completed | archived
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  talks   SafetyToolboxTalk[]
+  audits  SafetyAudit[]
+  hazards SafetyHazard[]
+
+  @@index([userId])
+}
+
+model SafetyToolboxTalk {
+  id            String     @id @default(cuid())
+  siteId        String
+  site          SafetySite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topicKey      String                     // key into the built-in topic library, or "custom"
+  topicTitle    String
+  talkingPoints Json                       // string[] snapshot of the library content
+  notes         String?
+  attendees     Json       @default("[]") // [{ name, photoUrl?, signature?, recordedAt }]
+  gpsLat        Float?
+  gpsLng        Float?
+  conductedAt   DateTime   @default(now())
+  createdAt     DateTime   @default(now())
+
+  @@index([siteId])
+  @@index([userId])
+}
+
+model SafetyAuditTemplate {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  structure Json                           // [{ section, items: [{ id, label }] }]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  audits SafetyAudit[]
+
+  @@index([userId])
+}
+
+model SafetyAudit {
+  id               String     @id @default(cuid())
+  siteId           String
+  site             SafetySite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateId       String?
+  template         SafetyAuditTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateName     String                   // snapshot (works for built-in templates too)
+  status           String     @default("in_progress") // in_progress | completed
+  items            Json       @default("[]") // [{ id, section, label, result?, photoUrl?, note? }]
+  score            Float?                    // pass / (pass + fail) * 100, set on complete
+  auditorSignature String?                   // base64 PNG
+  completedAt      DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  hazards SafetyHazard[]
+
+  @@index([siteId])
+  @@index([userId])
+}
+
+model SafetyHazard {
+  id             String     @id @default(cuid())
+  siteId         String
+  site           SafetySite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  userId         String                     // reporter
+  user           User       @relation("safetyHazardReporter", fields: [userId], references: [id], onDelete: Cascade)
+  auditId        String?                    // set when created from a failed audit item
+  audit          SafetyAudit? @relation(fields: [auditId], references: [id], onDelete: SetNull)
+  auditItemId    String?
+  type           String     @default("other") // fall|electrical|fire|ppe|housekeeping|machinery|excavation|other
+  severity       String     @default("medium") // low | medium | high | critical
+  description    String?
+  locationNote   String?
+  photoUrl       String?
+  fixedPhotoUrl  String?
+  gpsLat         Float?
+  gpsLng         Float?
+  status         String     @default("open") // open | in_progress | closed
+  assigneeUserId String?                    // registered user → push notification
+  assigneeName   String?                    // free-text fallback
+  dueDate        DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([siteId])
+  @@index([userId])
+  @@index([status])
+}
+
+model SafetySettings {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName String?
+  logoUrl     String?
+  brandColor  String?
+  footerText  String?
+  updatedAt   DateTime @updatedAt
 }

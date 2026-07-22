@@ -96,7 +96,7 @@ export async function register(req: AuthenticatedRequest, res: Response): Promis
       isVerified: false,
       referralCode: newUserReferralCode,
       referredBy: referrer ? String(referralCode) : null,
-      signupSource: source === 'inspect_app' ? 'inspect_app' : 'web',
+      signupSource: source === 'inspect_app' ? 'inspect_app' : source === 'safety_app' ? 'safety_app' : 'web',
     },
   });
 
