@@ -17,11 +17,11 @@ export function getConnectCost(budget: number, budgetType: string, currency: str
 }
 
 export const CONNECT_PACKAGES = {
-  starter:  { connects: 10,  priceInPaise: 9900  },   // ₹99
-  pro:      { connects: 30,  priceInPaise: 24900 },   // ₹249
-  power:    { connects: 60,  priceInPaise: 44900 },   // ₹449
-  elite:    { connects: 120, priceInPaise: 79900 },   // ₹799
-  bulk:     { connects: 200, priceInPaise: 119900 },  // ₹1199 — 20% off vs starter rate
+  starter:  { connects: 10,  priceInPaise: 14900  },  // ₹149 (was ₹99, ~+50%)
+  pro:      { connects: 30,  priceInPaise: 37500 },   // ₹375 (was ₹249, ~+50%)
+  power:    { connects: 60,  priceInPaise: 67500 },   // ₹675 (was ₹449, ~+50%)
+  elite:    { connects: 120, priceInPaise: 119900 },  // ₹1199 (was ₹799, ~+50%)
+  bulk:     { connects: 200, priceInPaise: 179900 },  // ₹1799 (was ₹1199, ~+50%) — best per-connect rate
 } as const;
 
 export type PackageKey = keyof typeof CONNECT_PACKAGES;
