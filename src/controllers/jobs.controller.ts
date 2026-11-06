@@ -3,6 +3,7 @@ import { prisma } from '../config/database';
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden } from '../utils/response';
 import { getPagination, buildPaginatedResult } from '../utils/pagination';
 import { getConnectCost } from '../utils/connectCost';
+import { notifyMatchingContractors } from '../utils/jobAlerts';
 import type { AuthenticatedRequest } from '../types';
 
 const JOB_INCLUDE = {
@@ -95,7 +96,10 @@ export async function createJob(req: AuthenticatedRequest, res: Response): Promi
     include: JOB_INCLUDE,
   });
 
-  // Create notification for nearby contractors (simplified)
+  // Alert matching contractors (in-app + push + email). Fire-and-forget —
+  // never block or fail the job-post response on notification errors.
+  notifyMatchingContractors(job).catch((err) => console.error('[JobAlerts] notify failed:', err));
+
   sendCreated(res, parseJobJson(job), 'Job posted successfully');
 }
 

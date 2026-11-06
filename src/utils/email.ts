@@ -21,6 +21,13 @@ const SENDER = () => ({
 
 const FRONTEND = () => process.env.FRONTEND_URL || 'https://biddaro.com';
 
+/** Format a money amount with the right currency symbol (deterministic, no ICU dependency). */
+function fmtMoney(amount: number, currency = 'USD'): string {
+  const symbols: Record<string, string> = { INR: '₹', USD: '$', AED: 'AED ', SGD: 'S$', GBP: '£', EUR: '€' };
+  const sym = symbols[currency] || `${currency} `;
+  return `${sym}${Math.round(amount).toLocaleString('en-US')}`;
+}
+
 /** Minimal branded wrapper — orange header + white body + CTA button. */
 function brandedHtml(opts: {
   preheader: string;
@@ -255,6 +262,34 @@ export async function sendBidReceivedEmail(opts: {
       ctaLink: `${FRONTEND()}/jobs/${opts.jobId}`,
       ctaLabel: 'Review Bid →',
       footerNote: "You're receiving this because you posted a job on Biddaro.",
+    }),
+  });
+}
+
+/** 1b. New matching job posted — notify a contractor to come bid */
+export async function sendNewJobEmail(opts: {
+  contractorEmail: string; contractorName: string;
+  jobTitle: string; category: string; location: string;
+  budget: number; currency: string; jobId: string;
+}): Promise<void> {
+  const money = fmtMoney(opts.budget, opts.currency);
+  await brevoSend({
+    sender: SENDER(),
+    to: [{ email: opts.contractorEmail, name: opts.contractorName }],
+    subject: `New ${opts.category} job${opts.location ? ` in ${opts.location}` : ''} — place your bid`,
+    htmlContent: brandedHtml({
+      preheader: `${opts.jobTitle} · ${money} · be the first to bid`,
+      bodyTitle: 'A new job matches your trade 🔨',
+      bodyLines: [
+        `Hi ${opts.contractorName},`,
+        'A new job was just posted that matches your skills:',
+        `<strong>"${opts.jobTitle}"</strong>`,
+        `Category: <strong>${opts.category}</strong>${opts.location ? ` &middot; Location: <strong>${opts.location}</strong>` : ''} &middot; Budget: <strong>${money}</strong>`,
+        'Jobs with early bids get the most attention — be the first to respond.',
+      ],
+      ctaLink: `${FRONTEND()}/jobs/${opts.jobId}`,
+      ctaLabel: 'View Job & Bid →',
+      footerNote: "You're getting this because the job matches your trade. Manage alerts in your notification settings.",
     }),
   });
 }
